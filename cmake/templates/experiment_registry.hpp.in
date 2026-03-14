@@ -1,0 +1,12 @@
+#pragma once
+
+#include "experiments/experiment_contract.hpp"
+
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+std::span<const ExperimentDescriptor> experiment_registry();
+const ExperimentDescriptor* find_experiment_descriptor(std::string_view id);
+std::vector<std::string> enabled_experiment_ids();

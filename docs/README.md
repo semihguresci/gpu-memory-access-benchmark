@@ -3,10 +3,11 @@
 This folder contains the planning and reference notes for the Vulkan compute benchmark roadmap.
 
 ## Recommended Reading Order
-1. [Development Principles and Plan](development_principles_and_plan.md)
-2. [Core Experiment Plans Index (01-25)](core_experiment_plans_index.md)
-3. [Advanced Investigations Roadmap](advanced_investigations_roadmap.md)
-4. [Advanced Investigation Plans Index (01-12)](advanced_investigation_plans_index.md)
+1. [Project Architecture](architecture.md)
+2. [Development Principles and Plan](development_principles_and_plan.md)
+3. [Core Experiment Plans Index (01-25)](core_experiment_plans_index.md)
+4. [Advanced Investigations Roadmap](advanced_investigations_roadmap.md)
+5. [Advanced Investigation Plans Index (01-12)](advanced_investigation_plans_index.md)
 
 ## Core Plans (01-25)
 - Plan index: [core_experiment_plans_index.md](core_experiment_plans_index.md)
@@ -27,4 +28,7 @@ This folder contains the planning and reference notes for the Vulkan compute ben
 ## Tooling Notes
 - [clang_tooling.md](clang_tooling.md)
 - [layout_rules.md](layout_rules.md)
-- [experiment_registry_generation.md](experiment_registry_generation.md)
+
+## Feature Notes
+- [features/features.md](features/features.md)
+- [features/experiment_registry_generation.md](features/experiment_registry_generation.md)

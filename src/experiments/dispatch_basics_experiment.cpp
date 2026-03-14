@@ -307,6 +307,7 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
         std::cerr << "Could not locate SPIR-V shader for dispatch basics write variant.\n";
         return output;
     }
+    std::cout << "[01_dispatch_basics] Write shader: " << write_shader_path << "\n";
 
     std::string noop_shader_path;
     if (config.include_noop_variant) {
@@ -315,6 +316,7 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
             std::cerr << "Could not locate SPIR-V shader for dispatch basics no-op variant.\n";
             return output;
         }
+        std::cout << "[01_dispatch_basics] No-op shader: " << noop_shader_path << "\n";
     }
 
     VkPhysicalDeviceProperties device_properties{};
@@ -335,6 +337,15 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
         std::cerr << "Scratch buffer is too small. Dispatch basics requires at least 2^10 float elements.\n";
         return output;
     }
+    const std::size_t variant_count = config.include_noop_variant ? 2U : 1U;
+    const std::size_t total_case_count = problem_sizes.size() * kDispatchCounts.size() * variant_count;
+    std::size_t completed_case_count = 0U;
+
+    std::cout << "[01_dispatch_basics] Starting run with problem_sizes=" << problem_sizes.size()
+              << ", dispatch_counts=" << kDispatchCounts.size() << ", variants=" << variant_count
+              << ", warmup_iterations=" << runner.warmup_iterations()
+              << ", timed_iterations=" << runner.timed_iterations() << ", max_buffer_bytes=" << config.max_buffer_bytes
+              << "\n";
 
     WritePipelineResources write_resources{};
     const VkDeviceSize buffer_size = static_cast<VkDeviceSize>(problem_sizes.back()) * sizeof(float);
@@ -377,8 +388,12 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
     for (uint32_t problem_size : problem_sizes) {
         const VkDeviceSize bytes = static_cast<VkDeviceSize>(problem_size) * sizeof(float);
         const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(problem_size, kLocalSizeX);
+        std::cout << "[01_dispatch_basics] Problem size=" << problem_size << " elements (" << bytes
+                  << " bytes), group_count_x=" << group_count_x << "\n";
 
         for (uint32_t dispatch_count : kDispatchCounts) {
+            std::cout << "[01_dispatch_basics] Case " << (completed_case_count + 1U) << "/" << total_case_count
+                      << ": variant=contiguous_write, dispatch_count=" << dispatch_count << "\n";
             std::vector<double> write_samples;
             write_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
 
@@ -443,13 +458,20 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                 output.all_points_correct = output.all_points_correct && correctness;
             }
 
-            output.summary_results.push_back(BenchmarkRunner::summarize_samples(
-                build_case_name("contiguous_write", problem_size, dispatch_count), write_samples));
+            BenchmarkResult write_summary = BenchmarkRunner::summarize_samples(
+                build_case_name("contiguous_write", problem_size, dispatch_count), write_samples);
+            output.summary_results.push_back(write_summary);
+            ++completed_case_count;
+            std::cout << "[01_dispatch_basics] Completed case " << completed_case_count << "/" << total_case_count
+                      << ": variant=contiguous_write, samples=" << write_summary.sample_count
+                      << ", median_gpu_ms=" << write_summary.median_ms << "\n";
 
             if (!config.include_noop_variant) {
                 continue;
             }
 
+            std::cout << "[01_dispatch_basics] Case " << (completed_case_count + 1U) << "/" << total_case_count
+                      << ": variant=noop, dispatch_count=" << dispatch_count << "\n";
             std::vector<double> noop_samples;
             noop_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
 
@@ -514,8 +536,13 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                 output.all_points_correct = output.all_points_correct && correctness;
             }
 
-            output.summary_results.push_back(BenchmarkRunner::summarize_samples(
-                build_case_name("noop", problem_size, dispatch_count), noop_samples));
+            BenchmarkResult noop_summary =
+                BenchmarkRunner::summarize_samples(build_case_name("noop", problem_size, dispatch_count), noop_samples);
+            output.summary_results.push_back(noop_summary);
+            ++completed_case_count;
+            std::cout << "[01_dispatch_basics] Completed case " << completed_case_count << "/" << total_case_count
+                      << ": variant=noop, samples=" << noop_summary.sample_count
+                      << ", median_gpu_ms=" << noop_summary.median_ms << "\n";
         }
     }
 
@@ -523,5 +550,8 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
     vkUnmapMemory(context.device(), write_resources.upload_staging.memory);
     destroy_noop_pipeline_resources(context, noop_resources);
     destroy_write_pipeline_resources(context, write_resources);
+    std::cout << "[01_dispatch_basics] Finished run: summaries=" << output.summary_results.size()
+              << ", rows=" << output.rows.size()
+              << ", all_points_correct=" << (output.all_points_correct ? "true" : "false") << "\n";
     return output;
 }

@@ -20,3 +20,6 @@ experiments/*/runs/**/*
 
 # Local archive for moved benchmark artifacts
 local_artifacts/
+/build-clang-mingw
+/build-clang-ninja
+/build-clang-ninja-make

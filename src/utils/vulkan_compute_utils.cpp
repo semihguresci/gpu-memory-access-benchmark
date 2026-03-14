@@ -1,6 +1,5 @@
 #include "utils/vulkan_compute_utils.hpp"
 
-#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -145,13 +144,30 @@ std::string resolve_shader_path(const std::string& user_path, const std::string&
         return user_path;
     }
 
-    const std::array<std::string, 5> candidates = {
-        "build/shaders/" + shader_name, "out/build/x64-Debug/shaders/" + shader_name,
-        "build_cli11/shaders/" + shader_name, "shaders/" + shader_name, "../shaders/" + shader_name};
+    std::vector<std::filesystem::path> candidates;
+    candidates.reserve(12);
+
+#if defined(PROJECT_SHADER_BINARY_DIR)
+    candidates.emplace_back(std::filesystem::path(PROJECT_SHADER_BINARY_DIR) / shader_name);
+#endif
+
+#if defined(PROJECT_SHADER_SOURCE_DIR)
+    candidates.emplace_back(std::filesystem::path(PROJECT_SHADER_SOURCE_DIR) / shader_name);
+#endif
+
+    candidates.emplace_back(std::filesystem::path("build") / "shaders" / shader_name);
+    candidates.emplace_back(std::filesystem::path("build") / "windows-x64" / "shaders" / shader_name);
+    candidates.emplace_back(std::filesystem::path("build") / "debug" / "shaders" / shader_name);
+    candidates.emplace_back(std::filesystem::path("build") / "release" / "shaders" / shader_name);
+    candidates.emplace_back(std::filesystem::path("out") / "build" / "x64-Debug" / "shaders" / shader_name);
+    candidates.emplace_back(std::filesystem::path("out") / "build" / "x64-Release" / "shaders" / shader_name);
+    candidates.emplace_back(std::filesystem::path("build_cli11") / "shaders" / shader_name);
+    candidates.emplace_back(std::filesystem::path("shaders") / shader_name);
+    candidates.emplace_back(std::filesystem::path("..") / "shaders" / shader_name);
 
     for (const auto& candidate : candidates) {
         if (std::filesystem::exists(candidate)) {
-            return candidate;
+            return candidate.generic_string();
         }
     }
 

@@ -1,0 +1,44 @@
+#include "experiments/experiment_registry.hpp"
+
+#include <algorithm>
+#include <array>
+#include <string>
+#include <string_view>
+#include <vector>
+
+@EXPERIMENT_FORWARD_DECLS@
+
+namespace {
+
+constexpr std::array<ExperimentDescriptor, @EXPERIMENT_COUNT@> kExperimentRegistry = {
+@EXPERIMENT_DESCRIPTOR_INITIALIZERS@
+};
+
+} // namespace
+
+std::span<const ExperimentDescriptor> experiment_registry() {
+    return kExperimentRegistry;
+}
+
+const ExperimentDescriptor* find_experiment_descriptor(std::string_view id) {
+    const auto it = std::find_if(kExperimentRegistry.begin(), kExperimentRegistry.end(),
+                                 [&](const ExperimentDescriptor& descriptor) { return descriptor.id == id; });
+    if (it == kExperimentRegistry.end()) {
+        return nullptr;
+    }
+
+    return &(*it);
+}
+
+std::vector<std::string> enabled_experiment_ids() {
+    std::vector<std::string> ids;
+    ids.reserve(kExperimentRegistry.size());
+
+    for (const ExperimentDescriptor& descriptor : kExperimentRegistry) {
+        if (descriptor.enabled) {
+            ids.emplace_back(descriptor.id);
+        }
+    }
+
+    return ids;
+}

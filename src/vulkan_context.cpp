@@ -1,6 +1,5 @@
 #include "vulkan_context.hpp"
 
-#include <array>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -75,10 +74,7 @@ void VulkanContext::shutdown() {
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
 
-        if (timestamp_query_pool_ != VK_NULL_HANDLE) {
-            vkDestroyQueryPool(device_, timestamp_query_pool_, nullptr);
-            timestamp_query_pool_ = VK_NULL_HANDLE;
-        }
+        gpu_timestamp_timer_.shutdown(device_);
 
         if (submit_fence_ != VK_NULL_HANDLE) {
             vkDestroyFence(device_, submit_fence_, nullptr);
@@ -105,7 +101,6 @@ void VulkanContext::shutdown() {
     physical_device_ = VK_NULL_HANDLE;
     compute_queue_ = VK_NULL_HANDLE;
     compute_queue_family_index_ = 0;
-    timestamp_period_ = 0.0F;
     gpu_timestamps_supported_ = false;
     validation_enabled_ = false;
 }
@@ -141,7 +136,7 @@ uint32_t VulkanContext::selected_device_driver_version() const {
 }
 
 double VulkanContext::measure_gpu_time_ms(const std::function<void(VkCommandBuffer)>& record_commands) {
-    if (!gpu_timestamps_supported_ || timestamp_query_pool_ == VK_NULL_HANDLE) {
+    if (!gpu_timestamps_supported_ || !gpu_timestamp_timer_.is_ready()) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
@@ -161,12 +156,11 @@ double VulkanContext::measure_gpu_time_ms(const std::function<void(VkCommandBuff
         return std::numeric_limits<double>::quiet_NaN();
     }
 
-    vkCmdResetQueryPool(command_buffer_, timestamp_query_pool_, 0, 2);
-    vkCmdWriteTimestamp(command_buffer_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timestamp_query_pool_, 0);
+    gpu_timestamp_timer_.record_start(command_buffer_);
 
     record_commands(command_buffer_);
 
-    vkCmdWriteTimestamp(command_buffer_, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestamp_query_pool_, 1);
+    gpu_timestamp_timer_.record_end(command_buffer_);
 
     if (vkEndCommandBuffer(command_buffer_) != VK_SUCCESS) {
         return std::numeric_limits<double>::quiet_NaN();
@@ -185,18 +179,12 @@ double VulkanContext::measure_gpu_time_ms(const std::function<void(VkCommandBuff
         return std::numeric_limits<double>::quiet_NaN();
     }
 
-    std::array<uint64_t, 2> query_data{};
-    const VkResult query_result = vkGetQueryPoolResults(
-        device_, timestamp_query_pool_, 0, static_cast<uint32_t>(query_data.size()), sizeof(query_data),
-        query_data.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-
-    if (query_result != VK_SUCCESS) {
+    double out_ms = std::numeric_limits<double>::quiet_NaN();
+    if (!gpu_timestamp_timer_.resolve_milliseconds(device_, out_ms)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
-    const uint64_t delta = query_data[1] - query_data[0];
-    const double ns = static_cast<double>(delta) * static_cast<double>(timestamp_period_);
-    return ns / 1000000.0;
+    return out_ms;
 }
 
 bool VulkanContext::create_instance(bool enable_validation) {
@@ -415,7 +403,7 @@ bool VulkanContext::create_command_resources() {
 bool VulkanContext::create_timestamp_query_pool() {
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(physical_device_, &props);
-    timestamp_period_ = props.limits.timestampPeriod;
+    const float timestamp_period_ns = props.limits.timestampPeriod;
 
     uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &queue_family_count, nullptr);
@@ -429,12 +417,9 @@ bool VulkanContext::create_timestamp_query_pool() {
         return true;
     }
 
-    VkQueryPoolCreateInfo query_info{};
-    query_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-    query_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
-    query_info.queryCount = 2;
+    gpu_timestamp_timer_.shutdown(device_);
 
-    if (vkCreateQueryPool(device_, &query_info, nullptr, &timestamp_query_pool_) != VK_SUCCESS) {
+    if (!gpu_timestamp_timer_.initialize(device_, timestamp_period_ns)) {
         std::cerr << "vkCreateQueryPool failed. GPU timestamps disabled.\n";
         gpu_timestamps_supported_ = false;
         return true;

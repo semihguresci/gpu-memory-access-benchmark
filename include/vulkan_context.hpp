@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils/gpu_timestamp_timer.hpp"
+
 #include <functional>
 #include <optional>
 #include <string>
@@ -48,10 +50,9 @@ class VulkanContext {
     VkCommandPool command_pool_ = VK_NULL_HANDLE;
     VkCommandBuffer command_buffer_ = VK_NULL_HANDLE;
     VkFence submit_fence_ = VK_NULL_HANDLE;
-    VkQueryPool timestamp_query_pool_ = VK_NULL_HANDLE;
+    VulkanComputeUtils::GpuTimestampTimer gpu_timestamp_timer_{};
     VkDebugUtilsMessengerEXT debug_messenger_ = VK_NULL_HANDLE;
     uint32_t compute_queue_family_index_ = 0;
-    float timestamp_period_ = 0.0F;
     bool gpu_timestamps_supported_ = false;
     bool validation_enabled_ = false;
 };

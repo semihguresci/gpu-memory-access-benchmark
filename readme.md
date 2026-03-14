@@ -29,10 +29,10 @@ The roadmap has been expanded to 25 experiments across six levels:
 6. Rendering-adjacent capstone pipeline
 
 Detailed status and per-experiment goals are tracked in:
-- `docs/00_development_principles_and_plan.md`
-- `docs/08_advanced_investigations_roadmap.md`
-- `docs/09_core_experiment_plans_index.md`
-- `docs/10_advanced_investigation_plans_index.md`
+- `docs/development_principles_and_plan.md`
+- `docs/advanced_investigations_roadmap.md`
+- `docs/core_experiment_plans_index.md`
+- `docs/advanced_investigation_plans_index.md`
 
 ## Planned Experiment Levels
 - Level 1 (01-05): dispatch basics, local size sweep, copy baseline, sequential indexing, ID mapping variants
@@ -129,11 +129,11 @@ experiments/NN_name/
 
 ## Documentation Roadmap
 - `docs/README.md`: documentation landing page and reading order
-- `docs/00_development_principles_and_plan.md`: development principles plus end-to-end program structure and milestones
-- `docs/09_core_experiment_plans_index.md`: indexed core plans (01-25)
+- `docs/development_principles_and_plan.md`: development principles plus end-to-end program structure and milestones
+- `docs/core_experiment_plans_index.md`: indexed core plans (01-25)
 - `docs/experiment_plans/`: detailed lecture-note plan per core experiment
-- `docs/08_advanced_investigations_roadmap.md`: advanced-track roadmap and phases
-- `docs/10_advanced_investigation_plans_index.md`: indexed advanced plans (01-12)
+- `docs/advanced_investigations_roadmap.md`: advanced-track roadmap and phases
+- `docs/advanced_investigation_plans_index.md`: indexed advanced plans (01-12)
 - `docs/advanced_plans/`: detailed lecture-note plan per advanced investigation
 
 ## Portfolio Signal

@@ -11,6 +11,7 @@ from pathlib import Path
 
 HEADER_EXTENSIONS = {".h", ".hh", ".hpp", ".hxx"}
 SOURCE_EXTENSIONS = {".c", ".cc", ".cpp", ".cxx"}
+DEFAULT_BUILD_DIR = Path("build-clang-ninja-make")
 
 
 def discover_cpp_files(repo_root: Path) -> tuple[list[Path], list[Path]]:
@@ -75,7 +76,8 @@ def run_clang_tidy(
         print(
             f"[clang-tidy] missing compile database: {compile_commands}\n"
             "Generate it first (example):\n"
-            "  cmake -S . -B build-clang-ninja -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            f'  cmake -S . -B {build_dir.name} -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug '
+            '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_COMPILER="C:/Program Files/LLVM/bin/clang++.exe"',
             file=sys.stderr,
         )
         return False
@@ -110,7 +112,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--build-dir",
         type=Path,
-        default=Path("build-clang-ninja"),
+        default=DEFAULT_BUILD_DIR,
         help="Build directory containing compile_commands.json for clang-tidy.",
     )
     parser.add_argument(

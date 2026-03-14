@@ -26,10 +26,31 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
+include("${CMAKE_SOURCE_DIR}/cmake/experiments_manifest.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/generate_experiment_registry.cmake")
+
+set(GENERATED_SOURCE_DIR "${CMAKE_BINARY_DIR}/generated")
+set(GENERATED_EXPERIMENT_DIR "${GENERATED_SOURCE_DIR}/experiments")
+file(MAKE_DIRECTORY "${GENERATED_EXPERIMENT_DIR}")
+
+set(EXPERIMENT_REGISTRY_HEADER "${GENERATED_EXPERIMENT_DIR}/experiment_registry.hpp")
+set(EXPERIMENT_REGISTRY_SOURCE "${GENERATED_EXPERIMENT_DIR}/experiment_registry.cpp")
+
+generate_experiment_registry(
+    MANIFEST_ENTRIES_VAR EXPERIMENT_MANIFEST_ENTRIES
+    HEADER_TEMPLATE "${CMAKE_SOURCE_DIR}/cmake/templates/experiment_registry.hpp.in"
+    SOURCE_TEMPLATE "${CMAKE_SOURCE_DIR}/cmake/templates/experiment_registry.cpp.in"
+    OUTPUT_HEADER "${EXPERIMENT_REGISTRY_HEADER}"
+    OUTPUT_SOURCE "${EXPERIMENT_REGISTRY_SOURCE}"
+)
+
 add_executable(gpu_memory_layout_experiments
     src/main.cpp
+    "${EXPERIMENT_REGISTRY_SOURCE}"
     src/experiments/dispatch_basics_experiment.cpp
     src/experiments/aos_soa_experiment.cpp
+    src/experiments/adapters/dispatch_basics_adapter.cpp
+    src/experiments/adapters/aos_soa_adapter.cpp
     src/utils/app_options.cpp
     src/utils/json_exporter.cpp
     src/utils/vulkan_compute_utils.cpp
@@ -42,6 +63,7 @@ add_executable(gpu_memory_layout_experiments
 target_include_directories(gpu_memory_layout_experiments
     PRIVATE
         include
+        "${GENERATED_SOURCE_DIR}"
 )
 
 target_link_libraries(gpu_memory_layout_experiments
@@ -69,6 +91,15 @@ endif()
 set(SHADER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${SHADER_BINARY_DIR}")
+
+string(REPLACE "\\" "/" SHADER_SOURCE_DIR_NORMALIZED "${SHADER_SOURCE_DIR}")
+string(REPLACE "\\" "/" SHADER_BINARY_DIR_NORMALIZED "${SHADER_BINARY_DIR}")
+
+target_compile_definitions(gpu_memory_layout_experiments
+    PRIVATE
+        PROJECT_SHADER_SOURCE_DIR=\"${SHADER_SOURCE_DIR_NORMALIZED}\"
+        PROJECT_SHADER_BINARY_DIR=\"${SHADER_BINARY_DIR_NORMALIZED}\"
+)
 
 if(BUILD_SHADERS)
     if(DEFINED Vulkan_GLSLC_EXECUTABLE AND EXISTS "${Vulkan_GLSLC_EXECUTABLE}")
