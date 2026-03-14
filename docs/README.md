@@ -29,6 +29,11 @@ This folder contains the planning and reference notes for the Vulkan compute ben
 - [clang_tooling.md](clang_tooling.md)
 - [layout_rules.md](layout_rules.md)
 
+## Testing Notes
+- [tests/README.md](tests/README.md)
+- [tests/test_plan.md](tests/test_plan.md)
+- [tests/test_coverage.md](tests/test_coverage.md)
+
 ## Feature Notes
 - [features/features.md](features/features.md)
 - [features/experiment_registry_generation.md](features/experiment_registry_generation.md)

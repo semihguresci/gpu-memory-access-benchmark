@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BUILD_SHADERS "Compile GLSL shaders during the build" ON)
 option(ENABLE_VULKAN_VALIDATION "Enable Vulkan validation by default at runtime" OFF)
+include(CTest)
 
 find_package(Vulkan REQUIRED)
 include(FetchContent)
@@ -133,3 +134,6 @@ if(BUILD_SHADERS)
         message(WARNING "glslc was not found by CMake. Set Vulkan_GLSLC_EXECUTABLE or disable BUILD_SHADERS.")
     endif()
 endif()
+
+include("${CMAKE_SOURCE_DIR}/cmake/tests.cmake")
+configure_gpu_memory_layout_tests()

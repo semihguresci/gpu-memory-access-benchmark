@@ -23,3 +23,5 @@ local_artifacts/
 /build-clang-mingw
 /build-clang-ninja
 /build-clang-ninja-make
+/build-tests
+/build-tests-vs
