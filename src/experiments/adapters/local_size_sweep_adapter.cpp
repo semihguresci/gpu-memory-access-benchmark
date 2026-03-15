@@ -11,7 +11,8 @@ bool run_local_size_sweep_experiment_adapter(VulkanContext& context, const Bench
         context, runner,
         LocalSizeSweepExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
                                        .include_noop_variant = true,
-                                       .dispatch_count = 1U});
+                                       .dispatch_count = 1U,
+                                       .verbose_progress = options.verbose_progress});
 
     output.summary_results = std::move(experiment_output.summary_results);
     output.rows = std::move(experiment_output.rows);

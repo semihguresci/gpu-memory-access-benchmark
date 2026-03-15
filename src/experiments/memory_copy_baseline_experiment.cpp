@@ -452,6 +452,7 @@ MemoryCopyBaselineExperimentOutput
 run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunner& runner,
                                     const MemoryCopyBaselineExperimentConfig& config) {
     MemoryCopyBaselineExperimentOutput output{};
+    const bool verbose_progress = config.verbose_progress;
 
     if (!context.gpu_timestamps_supported()) {
         std::cerr << "Memory copy baseline experiment requires GPU timestamp support.\n";
@@ -510,12 +511,14 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
         return output;
     }
 
-    std::cout << "[" << kExperimentId << "] Read-only shader: " << read_only_shader_path << "\n";
-    std::cout << "[" << kExperimentId << "] Write-only shader: " << write_only_shader_path << "\n";
-    std::cout << "[" << kExperimentId << "] Read+write copy shader: " << read_write_copy_shader_path << "\n";
-    std::cout << "[" << kExperimentId << "] Starting run with problem_sizes=" << problem_sizes.size()
-              << ", local_size_x=" << kLocalSizeX << ", warmup_iterations=" << runner.warmup_iterations()
-              << ", timed_iterations=" << runner.timed_iterations() << "\n";
+    if (verbose_progress) {
+        std::cout << "[" << kExperimentId << "] Read-only shader: " << read_only_shader_path << "\n";
+        std::cout << "[" << kExperimentId << "] Write-only shader: " << write_only_shader_path << "\n";
+        std::cout << "[" << kExperimentId << "] Read+write copy shader: " << read_write_copy_shader_path << "\n";
+        std::cout << "[" << kExperimentId << "] Starting run with problem_sizes=" << problem_sizes.size()
+                  << ", local_size_x=" << kLocalSizeX << ", warmup_iterations=" << runner.warmup_iterations()
+                  << ", timed_iterations=" << runner.timed_iterations() << "\n";
+    }
 
     const VkDeviceSize max_buffer_size = static_cast<VkDeviceSize>(problem_sizes.back()) * sizeof(float);
     ExperimentBufferResources buffers{};
@@ -573,9 +576,11 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
         const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(problem_size, kLocalSizeX);
 
         for (const ModeDescriptor& mode_descriptor : kModes) {
-            std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
-                      << ": variant=" << mode_descriptor.variant_name << ", problem_size=" << problem_size
-                      << ", group_count_x=" << group_count_x << "\n";
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
+                          << ": variant=" << mode_descriptor.variant_name << ", problem_size=" << problem_size
+                          << ", group_count_x=" << group_count_x << "\n";
+            }
 
             std::vector<double> dispatch_samples;
             dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
@@ -591,6 +596,16 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
                     if (!std::isfinite(upload_ms) || !std::isfinite(dispatch_ms) || !std::isfinite(readback_ms)) {
                         std::cerr << "Warmup produced non-finite timing value in read-only mode.\n";
                     }
+
+                    if (verbose_progress) {
+                        const bool warmup_ok =
+                            std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+                        std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
+                                  << runner.warmup_iterations() << " variant=" << mode_descriptor.variant_name
+                                  << ", problem_size=" << problem_size << ", upload_ms=" << upload_ms
+                                  << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
+                                  << ", correctness=" << (warmup_ok ? "pass" : "fail") << "\n";
+                    }
                 } else if (mode_descriptor.mode == MemoryMode::kWriteOnly) {
                     fill_sentinel(staging_values, problem_size, kWriteOnlySentinel);
                     const double upload_ms = run_upload_stage(context, buffers.staging, buffers.dst_device, bytes);
@@ -600,6 +615,16 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
 
                     if (!std::isfinite(upload_ms) || !std::isfinite(dispatch_ms) || !std::isfinite(readback_ms)) {
                         std::cerr << "Warmup produced non-finite timing value in write-only mode.\n";
+                    }
+
+                    if (verbose_progress) {
+                        const bool warmup_ok =
+                            std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+                        std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
+                                  << runner.warmup_iterations() << " variant=" << mode_descriptor.variant_name
+                                  << ", problem_size=" << problem_size << ", upload_ms=" << upload_ms
+                                  << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
+                                  << ", correctness=" << (warmup_ok ? "pass" : "fail") << "\n";
                     }
                 } else {
                     fill_source_pattern(staging_values, problem_size);
@@ -613,6 +638,17 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
                     if (!std::isfinite(upload_src_ms) || !std::isfinite(upload_dst_ms) || !std::isfinite(dispatch_ms) ||
                         !std::isfinite(readback_ms)) {
                         std::cerr << "Warmup produced non-finite timing value in read+write copy mode.\n";
+                    }
+
+                    if (verbose_progress) {
+                        const bool warmup_ok = std::isfinite(upload_src_ms) && std::isfinite(upload_dst_ms) &&
+                                               std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+                        std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
+                                  << runner.warmup_iterations() << " variant=" << mode_descriptor.variant_name
+                                  << ", problem_size=" << problem_size << ", upload_src_ms=" << upload_src_ms
+                                  << ", upload_dst_ms=" << upload_dst_ms << ", dispatch_ms=" << dispatch_ms
+                                  << ", readback_ms=" << readback_ms
+                                  << ", correctness=" << (warmup_ok ? "pass" : "fail") << "\n";
                     }
                 }
             }
@@ -688,6 +724,14 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
 
                 const bool correctness = upload_ok && upload_dst_ok && dispatch_ok && readback_ok && data_ok;
                 dispatch_samples.push_back(dispatch_ms);
+                if (verbose_progress) {
+                    std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/"
+                              << runner.timed_iterations() << " variant=" << mode_descriptor.variant_name
+                              << ", problem_size=" << problem_size << ", upload_ms=" << upload_ms
+                              << ", upload_dst_ms=" << upload_dst_ms << ", dispatch_ms=" << dispatch_ms
+                              << ", readback_ms=" << readback_ms << ", end_to_end_ms=" << end_to_end_ms.count()
+                              << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
+                }
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = kExperimentId,
                     .variant = mode_descriptor.variant_name,
@@ -704,9 +748,16 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
                 output.all_points_correct = output.all_points_correct && correctness;
             }
 
-            output.summary_results.push_back(BenchmarkRunner::summarize_samples(
-                build_case_name(mode_descriptor.variant_name, problem_size), dispatch_samples));
+            const BenchmarkResult summary = BenchmarkRunner::summarize_samples(
+                build_case_name(mode_descriptor.variant_name, problem_size), dispatch_samples);
+            output.summary_results.push_back(summary);
             ++completed_case_count;
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Completed case " << completed_case_count << "/"
+                          << total_case_count << ": variant=" << mode_descriptor.variant_name
+                          << ", problem_size=" << problem_size << ", samples=" << summary.sample_count
+                          << ", median_gpu_ms=" << summary.median_ms << "\n";
+            }
         }
     }
 
@@ -716,8 +767,10 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
     destroy_variant_pipeline_resources(context, read_only_resources);
     destroy_experiment_buffer_resources(context, buffers);
 
-    std::cout << "[" << kExperimentId << "] Finished run: summaries=" << output.summary_results.size()
-              << ", rows=" << output.rows.size()
-              << ", all_points_correct=" << (output.all_points_correct ? "true" : "false") << "\n";
+    if (verbose_progress) {
+        std::cout << "[" << kExperimentId << "] Finished run: summaries=" << output.summary_results.size()
+                  << ", rows=" << output.rows.size()
+                  << ", all_points_correct=" << (output.all_points_correct ? "true" : "false") << "\n";
+    }
     return output;
 }

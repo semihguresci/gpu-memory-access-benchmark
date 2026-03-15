@@ -1,0 +1,43 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer PosX { float pos_x[]; };
+layout(std430, binding = 1) buffer PosY { float pos_y[]; };
+layout(std430, binding = 2) buffer PosZ { float pos_z[]; };
+layout(std430, binding = 3) buffer Mass { float mass[]; };
+layout(std430, binding = 4) buffer VelX { float vel_x[]; };
+layout(std430, binding = 5) buffer VelY { float vel_y[]; };
+layout(std430, binding = 6) buffer VelZ { float vel_z[]; };
+layout(std430, binding = 7) buffer Dt   { float dt[]; };
+layout(std430, binding = 8) buffer Aux0 { float aux0[]; };
+layout(std430, binding = 9) buffer Aux1 { float aux1[]; };
+layout(std430, binding = 10) buffer Aux2 { float aux2[]; };
+layout(std430, binding = 11) buffer Aux3 { float aux3[]; };
+layout(std430, binding = 12) buffer Cold0 { float cold0[]; };
+layout(std430, binding = 13) buffer Cold1 { float cold1[]; };
+layout(std430, binding = 14) buffer Cold2 { float cold2[]; };
+layout(std430, binding = 15) buffer Cold3 { float cold3[]; };
+
+layout(push_constant) uniform Params {
+    uint count;
+} params;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= params.count) {
+        return;
+    }
+
+    float adv_x = vel_x[id] * dt[id];
+    float adv_y = vel_y[id] * dt[id];
+    float adv_z = vel_z[id] * dt[id];
+    pos_x[id] += adv_x;
+    pos_y[id] += adv_y;
+    pos_z[id] += adv_z;
+    aux0[id] += (adv_x * 0.5) + (adv_y * 0.25);
+    aux1[id] += adv_z * 0.75;
+    aux2[id] = (aux2[id] * 0.999) + (aux0[id] * 0.001);
+    aux3[id] += aux2[id] * 0.01;
+    mass[id] += 0.000001 + (aux1[id] * 0.0000001);
+}

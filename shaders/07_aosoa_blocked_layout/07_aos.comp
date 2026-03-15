@@ -1,0 +1,51 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct Particle {
+    float px;
+    float py;
+    float pz;
+    float mass;
+    float vx;
+    float vy;
+    float vz;
+    float dt;
+    float aux0;
+    float aux1;
+    float aux2;
+    float aux3;
+    float cold0;
+    float cold1;
+    float cold2;
+    float cold3;
+};
+
+layout(std430, binding = 0) buffer Particles {
+    Particle data[];
+};
+
+layout(push_constant) uniform Params {
+    uint count;
+} params;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= params.count) {
+        return;
+    }
+
+    Particle particle = data[id];
+    float adv_x = particle.vx * particle.dt;
+    float adv_y = particle.vy * particle.dt;
+    float adv_z = particle.vz * particle.dt;
+    particle.px += adv_x;
+    particle.py += adv_y;
+    particle.pz += adv_z;
+    particle.aux0 += (adv_x * 0.5) + (adv_y * 0.25);
+    particle.aux1 += adv_z * 0.75;
+    particle.aux2 = (particle.aux2 * 0.999) + (particle.aux0 * 0.001);
+    particle.aux3 += particle.aux2 * 0.01;
+    particle.mass += 0.000001 + (particle.aux1 * 0.0000001);
+    data[id] = particle;
+}

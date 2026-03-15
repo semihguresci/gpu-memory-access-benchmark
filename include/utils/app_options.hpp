@@ -14,6 +14,7 @@ struct AppOptions {
     std::vector<std::string> selected_experiment_ids;
     int timed_iterations = 20;
     int warmup_iterations = 5;
+    bool verbose_progress = false;
     VkDeviceSize scratch_size_bytes = static_cast<VkDeviceSize>(4ULL * 1024ULL * 1024ULL);
     std::string output_path = "results/tables/benchmark_results.json";
 };

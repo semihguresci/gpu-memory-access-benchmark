@@ -5,4 +5,5 @@ set(EXPERIMENT_MANIFEST_ENTRIES
     "04_sequential_indexing|Sequential Indexing|foundations|run_sequential_indexing_experiment_adapter|ON"
     "05_global_id_mapping_variants|Global ID Mapping Variants|foundations|run_global_id_mapping_variants_experiment_adapter|ON"
     "06_aos_vs_soa|AoS vs SoA|memory_layout|run_aos_soa_experiment_adapter|ON"
+    "07_aosoa_blocked_layout|AoSoA Blocked Layout|memory_layout|run_aosoa_blocked_layout_experiment_adapter|ON"
 )

@@ -402,6 +402,7 @@ bool validate_noop_result(const float* data, uint32_t count, float sentinel_valu
 LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& context, const BenchmarkRunner& runner,
                                                                const LocalSizeSweepExperimentConfig& config) {
     LocalSizeSweepExperimentOutput output{};
+    const bool verbose_progress = config.verbose_progress;
 
     if (!context.gpu_timestamps_supported()) {
         std::cerr << "Local size sweep experiment requires GPU timestamp support.\n";
@@ -436,8 +437,10 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
         if (is_local_size_candidate_legal(device_properties, local_size_x)) {
             legal_local_sizes.push_back(local_size_x);
         } else {
-            std::cout << "[" << kExperimentId << "] Skipping illegal local_size_x=" << local_size_x
-                      << " (device limits).\n";
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Skipping illegal local_size_x=" << local_size_x
+                          << " (device limits).\n";
+            }
         }
     }
 
@@ -504,19 +507,23 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
     }
 
     std::size_t completed_case_count = 0U;
-    std::cout << "[" << kExperimentId << "] Starting run with local_sizes=" << pipeline_resources.size()
-              << ", base_problem_sizes=" << base_problem_sizes.size()
-              << ", warmup_iterations=" << runner.warmup_iterations()
-              << ", timed_iterations=" << runner.timed_iterations() << ", dispatch_count=" << config.dispatch_count
-              << ", include_noop_variant=" << (config.include_noop_variant ? "true" : "false") << "\n";
+    if (verbose_progress) {
+        std::cout << "[" << kExperimentId << "] Starting run with local_sizes=" << pipeline_resources.size()
+                  << ", base_problem_sizes=" << base_problem_sizes.size()
+                  << ", warmup_iterations=" << runner.warmup_iterations()
+                  << ", timed_iterations=" << runner.timed_iterations() << ", dispatch_count=" << config.dispatch_count
+                  << ", include_noop_variant=" << (config.include_noop_variant ? "true" : "false") << "\n";
+    }
 
     for (const LocalSizePipelineResources& per_local_size : pipeline_resources) {
         const uint32_t local_size_x = per_local_size.local_size_x;
         const std::vector<uint32_t> problem_sizes_for_local_size = filter_problem_sizes_for_local_size(
             base_problem_sizes, local_size_x, device_properties.limits.maxComputeWorkGroupCount[0]);
         if (problem_sizes_for_local_size.empty()) {
-            std::cout << "[" << kExperimentId << "] Skipping local_size_x=" << local_size_x
-                      << " (no legal problem sizes under maxComputeWorkGroupCount[0]).\n";
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Skipping local_size_x=" << local_size_x
+                          << " (no legal problem sizes under maxComputeWorkGroupCount[0]).\n";
+            }
             continue;
         }
 
@@ -524,10 +531,12 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
             const VkDeviceSize bytes = static_cast<VkDeviceSize>(problem_size) * sizeof(float);
             const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(problem_size, local_size_x);
 
-            std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
-                      << ": variant=contiguous_write"
-                      << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
-                      << ", group_count_x=" << group_count_x << "\n";
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
+                          << ": variant=contiguous_write"
+                          << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
+                          << ", group_count_x=" << group_count_x << "\n";
+            }
             std::vector<double> write_samples;
             write_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
 
@@ -543,6 +552,17 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                 if (!std::isfinite(upload_ms) || !std::isfinite(dispatch_ms) || !std::isfinite(readback_ms)) {
                     std::cerr << "Warmup produced non-finite timing value for local_size_x=" << local_size_x
                               << ", variant=contiguous_write.\n";
+                }
+
+                if (verbose_progress) {
+                    const bool warmup_ok =
+                        std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+                    std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
+                              << runner.warmup_iterations() << " variant=contiguous_write"
+                              << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
+                              << ", upload_ms=" << upload_ms << ", dispatch_ms=" << dispatch_ms
+                              << ", readback_ms=" << readback_ms << ", correctness=" << (warmup_ok ? "pass" : "fail")
+                              << "\n";
                 }
             }
 
@@ -581,6 +601,14 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
 
                 const std::chrono::duration<double, std::milli> end_to_end_ms = end - start;
                 write_samples.push_back(dispatch_ms);
+                if (verbose_progress) {
+                    std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/"
+                              << runner.timed_iterations() << " variant=contiguous_write"
+                              << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
+                              << ", upload_ms=" << upload_ms << ", dispatch_ms=" << dispatch_ms
+                              << ", readback_ms=" << readback_ms << ", end_to_end_ms=" << end_to_end_ms.count()
+                              << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
+                }
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = kExperimentId,
                     .variant = "contiguous_write_ls" + std::to_string(local_size_x),
@@ -598,18 +626,27 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                 output.all_points_correct = output.all_points_correct && correctness;
             }
 
-            output.summary_results.push_back(BenchmarkRunner::summarize_samples(
-                build_case_name("contiguous_write", local_size_x, problem_size, config.dispatch_count), write_samples));
+            const BenchmarkResult write_summary = BenchmarkRunner::summarize_samples(
+                build_case_name("contiguous_write", local_size_x, problem_size, config.dispatch_count), write_samples);
+            output.summary_results.push_back(write_summary);
             ++completed_case_count;
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Completed case " << completed_case_count << "/"
+                          << total_case_count << ": variant=contiguous_write, local_size_x=" << local_size_x
+                          << ", problem_size=" << problem_size << ", samples=" << write_summary.sample_count
+                          << ", median_gpu_ms=" << write_summary.median_ms << "\n";
+            }
 
             if (!config.include_noop_variant) {
                 continue;
             }
 
-            std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
-                      << ": variant=noop"
-                      << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
-                      << ", group_count_x=" << group_count_x << "\n";
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
+                          << ": variant=noop"
+                          << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
+                          << ", group_count_x=" << group_count_x << "\n";
+            }
             std::vector<double> noop_samples;
             noop_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
 
@@ -624,6 +661,17 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                 if (!std::isfinite(upload_ms) || !std::isfinite(dispatch_ms) || !std::isfinite(readback_ms)) {
                     std::cerr << "Warmup produced non-finite timing value for local_size_x=" << local_size_x
                               << ", variant=noop.\n";
+                }
+
+                if (verbose_progress) {
+                    const bool warmup_ok =
+                        std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+                    std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
+                              << runner.warmup_iterations() << " variant=noop"
+                              << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
+                              << ", upload_ms=" << upload_ms << ", dispatch_ms=" << dispatch_ms
+                              << ", readback_ms=" << readback_ms << ", correctness=" << (warmup_ok ? "pass" : "fail")
+                              << "\n";
                 }
             }
 
@@ -661,6 +709,14 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
 
                 const std::chrono::duration<double, std::milli> end_to_end_ms = end - start;
                 noop_samples.push_back(dispatch_ms);
+                if (verbose_progress) {
+                    std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/"
+                              << runner.timed_iterations() << " variant=noop"
+                              << ", local_size_x=" << local_size_x << ", problem_size=" << problem_size
+                              << ", upload_ms=" << upload_ms << ", dispatch_ms=" << dispatch_ms
+                              << ", readback_ms=" << readback_ms << ", end_to_end_ms=" << end_to_end_ms.count()
+                              << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
+                }
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = kExperimentId,
                     .variant = "noop_ls" + std::to_string(local_size_x),
@@ -678,9 +734,16 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                 output.all_points_correct = output.all_points_correct && correctness;
             }
 
-            output.summary_results.push_back(BenchmarkRunner::summarize_samples(
-                build_case_name("noop", local_size_x, problem_size, config.dispatch_count), noop_samples));
+            const BenchmarkResult noop_summary = BenchmarkRunner::summarize_samples(
+                build_case_name("noop", local_size_x, problem_size, config.dispatch_count), noop_samples);
+            output.summary_results.push_back(noop_summary);
             ++completed_case_count;
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Completed case " << completed_case_count << "/"
+                          << total_case_count << ": variant=noop, local_size_x=" << local_size_x
+                          << ", problem_size=" << problem_size << ", samples=" << noop_summary.sample_count
+                          << ", median_gpu_ms=" << noop_summary.median_ms << "\n";
+            }
         }
     }
 
@@ -690,8 +753,10 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
     destroy_shared_noop_resources(context, noop_resources);
     destroy_shared_write_resources(context, write_resources);
 
-    std::cout << "[" << kExperimentId << "] Finished run: summaries=" << output.summary_results.size()
-              << ", rows=" << output.rows.size()
-              << ", all_points_correct=" << (output.all_points_correct ? "true" : "false") << "\n";
+    if (verbose_progress) {
+        std::cout << "[" << kExperimentId << "] Finished run: summaries=" << output.summary_results.size()
+                  << ", rows=" << output.rows.size()
+                  << ", all_points_correct=" << (output.all_points_correct ? "true" : "false") << "\n";
+    }
     return output;
 }

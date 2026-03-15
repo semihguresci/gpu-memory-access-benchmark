@@ -10,7 +10,8 @@ bool run_sequential_indexing_experiment_adapter(VulkanContext& context, const Be
     SequentialIndexingExperimentOutput experiment_output = run_sequential_indexing_experiment(
         context, runner,
         SequentialIndexingExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
-                                           .shader_path = ""});
+                                           .shader_path = "",
+                                           .verbose_progress = options.verbose_progress});
 
     output.summary_results = std::move(experiment_output.summary_results);
     output.rows = std::move(experiment_output.rows);

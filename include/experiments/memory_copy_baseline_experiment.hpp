@@ -13,6 +13,7 @@ struct MemoryCopyBaselineExperimentConfig {
     std::string read_only_shader_path;
     std::string write_only_shader_path;
     std::string read_write_copy_shader_path;
+    bool verbose_progress = false;
 };
 
 struct MemoryCopyBaselineExperimentOutput {

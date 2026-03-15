@@ -23,6 +23,8 @@ Target: production-quality Vulkan compute code in modern C++.
   - `cmake --preset windows-tests-vs`
   - `cmake --build --preset tests-vs-release --target gpu_memory_layout_experiments`
 - `windows-tests-vs` must keep shader auto-compilation enabled (`BUILD_SHADERS=ON`).
+- Shader sources are organized under `shaders/<experiment_id>/` (for example `shaders/03_memory_copy_baseline/`).
+- Shader compilation is recursive under `shaders/`; keep one canonical source file per shader and avoid duplicate shader basenames across experiments (compiled outputs are emitted as `<name>.spv` in `build*/shaders/`).
 - Before collecting benchmark data, ensure the selected binary has been rebuilt after experiment registration changes.
 - If `scripts/run_experiment_data_collection.py` resolves a stale binary, provide `--binary` explicitly.
 
@@ -63,6 +65,10 @@ Target: production-quality Vulkan compute code in modern C++.
 - Return `bool`/status for recoverable failures, and log actionable messages to `std::cerr`.
 - Do not swallow errors from Vulkan/IO operations.
 - Keep failure paths simple and leak-free.
+- Keep progress/process logs on `std::cout` gated behind the runtime flag `--verbose-progress`.
+- Default runs should stay quiet (no per-iteration progress spam) unless `--verbose-progress` is explicitly enabled.
+- New experiment configs should carry `verbose_progress` and adapters must forward `AppOptions::verbose_progress`.
+- `scripts/run_experiment_data_collection.py` supports `--verbose-progress`; keep script and binary flag behavior aligned.
 
 ## Performance and Safety
 - Minimize allocations in per-dispatch paths.

@@ -11,7 +11,8 @@ bool run_aos_soa_experiment_adapter(VulkanContext& context, const BenchmarkRunne
         context, runner,
         AosSoaExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
                                .aos_shader_path = "",
-                               .soa_shader_path = ""});
+                               .soa_shader_path = "",
+                               .verbose_progress = options.verbose_progress});
 
     output.summary_results = std::move(experiment_output.summary_results);
     output.rows = std::move(experiment_output.rows);

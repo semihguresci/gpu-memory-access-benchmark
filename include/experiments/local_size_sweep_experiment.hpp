@@ -12,6 +12,7 @@ struct LocalSizeSweepExperimentConfig {
     std::size_t max_buffer_bytes = 0;
     bool include_noop_variant = true;
     uint32_t dispatch_count = 1;
+    bool verbose_progress = false;
 };
 
 struct LocalSizeSweepExperimentOutput {

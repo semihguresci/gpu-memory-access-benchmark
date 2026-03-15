@@ -12,7 +12,8 @@ bool run_memory_copy_baseline_experiment_adapter(VulkanContext& context, const B
         MemoryCopyBaselineExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
                                            .read_only_shader_path = "",
                                            .write_only_shader_path = "",
-                                           .read_write_copy_shader_path = ""});
+                                           .read_write_copy_shader_path = "",
+                                           .verbose_progress = options.verbose_progress});
 
     output.summary_results = std::move(experiment_output.summary_results);
     output.rows = std::move(experiment_output.rows);

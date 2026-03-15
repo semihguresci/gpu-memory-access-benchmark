@@ -11,6 +11,7 @@ class VulkanContext;
 struct GlobalIdMappingVariantsExperimentConfig {
     std::size_t max_buffer_bytes = 0;
     std::string shader_path;
+    bool verbose_progress = false;
 };
 
 struct GlobalIdMappingVariantsExperimentOutput {

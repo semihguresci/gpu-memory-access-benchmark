@@ -285,6 +285,7 @@ SequentialIndexingExperimentOutput
 run_sequential_indexing_experiment(VulkanContext& context, const BenchmarkRunner& runner,
                                    const SequentialIndexingExperimentConfig& config) {
     SequentialIndexingExperimentOutput output{};
+    const bool verbose_progress = config.verbose_progress;
 
     if (!context.gpu_timestamps_supported()) {
         std::cerr << "Sequential indexing experiment requires GPU timestamp support.\n";
@@ -328,11 +329,13 @@ run_sequential_indexing_experiment(VulkanContext& context, const BenchmarkRunner
         return output;
     }
 
-    std::cout << "[" << kExperimentId << "] Shader: " << shader_path << "\n";
-    std::cout << "[" << kExperimentId << "] Starting run with problem_sizes=" << problem_sizes.size()
-              << ", dispatch_counts=" << kDispatchCounts.size() << ", local_size_x=" << kLocalSizeX
-              << ", warmup_iterations=" << runner.warmup_iterations()
-              << ", timed_iterations=" << runner.timed_iterations() << "\n";
+    if (verbose_progress) {
+        std::cout << "[" << kExperimentId << "] Shader: " << shader_path << "\n";
+        std::cout << "[" << kExperimentId << "] Starting run with problem_sizes=" << problem_sizes.size()
+                  << ", dispatch_counts=" << kDispatchCounts.size() << ", local_size_x=" << kLocalSizeX
+                  << ", warmup_iterations=" << runner.warmup_iterations()
+                  << ", timed_iterations=" << runner.timed_iterations() << "\n";
+    }
 
     const VkDeviceSize max_buffer_size = static_cast<VkDeviceSize>(problem_sizes.back()) * sizeof(float);
     ExperimentBufferResources buffers{};
@@ -367,9 +370,11 @@ run_sequential_indexing_experiment(VulkanContext& context, const BenchmarkRunner
         const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(problem_size, kLocalSizeX);
 
         for (const uint32_t dispatch_count : kDispatchCounts) {
-            std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
-                      << ": variant=sequential_read_write, problem_size=" << problem_size
-                      << ", dispatch_count=" << dispatch_count << ", group_count_x=" << group_count_x << "\n";
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/" << total_case_count
+                          << ": variant=sequential_read_write, problem_size=" << problem_size
+                          << ", dispatch_count=" << dispatch_count << ", group_count_x=" << group_count_x << "\n";
+            }
 
             std::vector<double> dispatch_samples;
             dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
@@ -386,6 +391,17 @@ run_sequential_indexing_experiment(VulkanContext& context, const BenchmarkRunner
                 if (!std::isfinite(upload_src_ms) || !std::isfinite(upload_dst_ms) || !std::isfinite(dispatch_ms) ||
                     !std::isfinite(readback_ms)) {
                     std::cerr << "Warmup produced non-finite timing value in sequential indexing experiment.\n";
+                }
+
+                if (verbose_progress) {
+                    const bool warmup_ok = std::isfinite(upload_src_ms) && std::isfinite(upload_dst_ms) &&
+                                           std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+                    std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
+                              << runner.warmup_iterations() << " variant=sequential_read_write"
+                              << ", problem_size=" << problem_size << ", dispatch_count=" << dispatch_count
+                              << ", upload_src_ms=" << upload_src_ms << ", upload_dst_ms=" << upload_dst_ms
+                              << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
+                              << ", correctness=" << (warmup_ok ? "pass" : "fail") << "\n";
                 }
             }
 
@@ -430,6 +446,15 @@ run_sequential_indexing_experiment(VulkanContext& context, const BenchmarkRunner
 
                 const bool correctness = upload_src_ok && upload_dst_ok && dispatch_ok && readback_ok && data_ok;
                 dispatch_samples.push_back(dispatch_ms);
+                if (verbose_progress) {
+                    std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/"
+                              << runner.timed_iterations() << " variant=sequential_read_write"
+                              << ", problem_size=" << problem_size << ", dispatch_count=" << dispatch_count
+                              << ", upload_src_ms=" << upload_src_ms << ", upload_dst_ms=" << upload_dst_ms
+                              << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
+                              << ", end_to_end_ms=" << end_to_end_ms.count()
+                              << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
+                }
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = kExperimentId,
                     .variant = "sequential_read_write",
@@ -446,17 +471,26 @@ run_sequential_indexing_experiment(VulkanContext& context, const BenchmarkRunner
                 output.all_points_correct = output.all_points_correct && correctness;
             }
 
-            output.summary_results.push_back(
-                BenchmarkRunner::summarize_samples(build_case_name(problem_size, dispatch_count), dispatch_samples));
+            const BenchmarkResult summary =
+                BenchmarkRunner::summarize_samples(build_case_name(problem_size, dispatch_count), dispatch_samples);
+            output.summary_results.push_back(summary);
             ++completed_case_count;
+            if (verbose_progress) {
+                std::cout << "[" << kExperimentId << "] Completed case " << completed_case_count << "/"
+                          << total_case_count << ": variant=sequential_read_write, problem_size=" << problem_size
+                          << ", dispatch_count=" << dispatch_count << ", samples=" << summary.sample_count
+                          << ", median_gpu_ms=" << summary.median_ms << "\n";
+            }
         }
     }
 
     vkUnmapMemory(context.device(), buffers.staging.memory);
     destroy_pipeline_resources(context, pipeline_resources);
     destroy_experiment_buffer_resources(context, buffers);
-    std::cout << "[" << kExperimentId << "] Finished run: summaries=" << output.summary_results.size()
-              << ", rows=" << output.rows.size()
-              << ", all_points_correct=" << (output.all_points_correct ? "true" : "false") << "\n";
+    if (verbose_progress) {
+        std::cout << "[" << kExperimentId << "] Finished run: summaries=" << output.summary_results.size()
+                  << ", rows=" << output.rows.size()
+                  << ", all_points_correct=" << (output.all_points_correct ? "true" : "false") << "\n";
+    }
     return output;
 }

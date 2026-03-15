@@ -29,6 +29,7 @@ TEST(AppOptionsTests, ParsesAllExperimentsAndNormalizesOutputExtension) {
     EXPECT_EQ(options.selected_experiment_ids, available_experiment_ids);
     EXPECT_EQ(options.timed_iterations, 7);
     EXPECT_EQ(options.warmup_iterations, 2);
+    EXPECT_FALSE(options.verbose_progress);
     EXPECT_EQ(options.scratch_size_bytes, static_cast<VkDeviceSize>(8U * 1024U * 1024U));
     EXPECT_EQ(options.output_path, "results/run.json");
 }
@@ -55,6 +56,21 @@ TEST(AppOptionsTests, ParsesSpecificExperimentsWithTrimAndDeduplication) {
     EXPECT_EQ(options.selected_experiment_ids, expected_ids);
     EXPECT_EQ(options.scratch_size_bytes, static_cast<VkDeviceSize>(1024));
     EXPECT_EQ(options.output_path, "out.json");
+    EXPECT_FALSE(options.verbose_progress);
+}
+
+TEST(AppOptionsTests, ParsesVerboseProgressFlag) {
+    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics"};
+    const std::vector<std::string> args = {
+        "gpu_memory_layout_experiments",
+        "--experiment",
+        "01_dispatch_basics",
+        "--verbose-progress",
+    };
+
+    const AppOptions options = TestSupport::parse_app_options(args, available_experiment_ids);
+
+    EXPECT_TRUE(options.verbose_progress);
 }
 
 TEST(AppOptionsTests, UnknownExperimentIdExitsWithCodeTwo) {

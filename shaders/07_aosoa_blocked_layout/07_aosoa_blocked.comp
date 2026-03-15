@@ -1,0 +1,76 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer BlockedData {
+    float data[];
+};
+
+layout(push_constant) uniform Params {
+    uint count;
+    uint block_size;
+    uint block_count;
+} params;
+
+const uint k_field_count = 16u;
+
+uint field_index(uint field, uint element_index) {
+    uint block = element_index / params.block_size;
+    uint lane = element_index % params.block_size;
+    uint block_stride = k_field_count * params.block_size;
+    return (block * block_stride) + (field * params.block_size) + lane;
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= params.count || params.block_size == 0u || params.block_count == 0u) {
+        return;
+    }
+
+    uint px_i = field_index(0u, id);
+    uint py_i = field_index(1u, id);
+    uint pz_i = field_index(2u, id);
+    uint mass_i = field_index(3u, id);
+    uint vx_i = field_index(4u, id);
+    uint vy_i = field_index(5u, id);
+    uint vz_i = field_index(6u, id);
+    uint dt_i = field_index(7u, id);
+    uint aux0_i = field_index(8u, id);
+    uint aux1_i = field_index(9u, id);
+    uint aux2_i = field_index(10u, id);
+    uint aux3_i = field_index(11u, id);
+
+    float px = data[px_i];
+    float py = data[py_i];
+    float pz = data[pz_i];
+    float mass = data[mass_i];
+    float vx = data[vx_i];
+    float vy = data[vy_i];
+    float vz = data[vz_i];
+    float dt = data[dt_i];
+    float aux0 = data[aux0_i];
+    float aux1 = data[aux1_i];
+    float aux2 = data[aux2_i];
+    float aux3 = data[aux3_i];
+
+    float adv_x = vx * dt;
+    float adv_y = vy * dt;
+    float adv_z = vz * dt;
+    px += adv_x;
+    py += adv_y;
+    pz += adv_z;
+    aux0 += (adv_x * 0.5) + (adv_y * 0.25);
+    aux1 += adv_z * 0.75;
+    aux2 = (aux2 * 0.999) + (aux0 * 0.001);
+    aux3 += aux2 * 0.01;
+    mass += 0.000001 + (aux1 * 0.0000001);
+
+    data[px_i] = px;
+    data[py_i] = py;
+    data[pz_i] = pz;
+    data[mass_i] = mass;
+    data[aux0_i] = aux0;
+    data[aux1_i] = aux1;
+    data[aux2_i] = aux2;
+    data[aux3_i] = aux3;
+}

@@ -13,6 +13,7 @@ struct DispatchBasicsExperimentConfig {
     std::string write_shader_path;
     std::string noop_shader_path;
     bool include_noop_variant = true;
+    bool verbose_progress = false;
 };
 
 struct DispatchBasicsExperimentOutput {

@@ -12,7 +12,8 @@ bool run_dispatch_basics_experiment_adapter(VulkanContext& context, const Benchm
         DispatchBasicsExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
                                        .write_shader_path = "",
                                        .noop_shader_path = "",
-                                       .include_noop_variant = true});
+                                       .include_noop_variant = true,
+                                       .verbose_progress = options.verbose_progress});
 
     output.summary_results = std::move(experiment_output.summary_results);
     output.rows = std::move(experiment_output.rows);

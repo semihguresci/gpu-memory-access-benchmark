@@ -45,7 +45,13 @@ EXPERIMENT_CONFIG = {
         "collect_script": ROOT / "experiments" / "06_aos_vs_soa" / "scripts" / "collect_run.py",
         "default_size": "64M",
     },
+    "07_aosoa_blocked_layout": {
+        "output": ROOT / "experiments" / "07_aosoa_blocked_layout" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "07_aosoa_blocked_layout" / "scripts" / "collect_run.py",
+        "default_size": "512M",
+    },
 }
+EXPERIMENT_IDS = tuple(EXPERIMENT_CONFIG.keys())
 
 
 def _resolve_binary(explicit_path: str | None) -> Path:
@@ -78,7 +84,7 @@ def _resolve_binary(explicit_path: str | None) -> Path:
 
 
 def _run_command(args: list[str]) -> None:
-    print(f"[run] {' '.join(args)}")
+    print(f"[run] {' '.join(args)}", flush=True)
     subprocess.run(args, cwd=str(ROOT), check=True)
 
 
@@ -87,16 +93,9 @@ def main() -> None:
     parser.add_argument(
         "--experiment",
         type=str,
-        default="01_dispatch_basics",
-        choices=[
-            "01_dispatch_basics",
-            "02_local_size_sweep",
-            "03_memory_copy_baseline",
-            "04_sequential_indexing",
-            "05_global_id_mapping_variants",
-            "06_aos_vs_soa",
-        ],
-        help="Experiment id to run and collect.",
+        default="all",
+        choices=["all", *EXPERIMENT_IDS],
+        help="Experiment id to run and collect, or 'all' to run every experiment.",
     )
     parser.add_argument(
         "--binary",
@@ -128,6 +127,11 @@ def main() -> None:
         help="Enable Vulkan validation layers during benchmark run.",
     )
     parser.add_argument(
+        "--verbose-progress",
+        action="store_true",
+        help="Enable verbose per-stage benchmark progress logs.",
+    )
+    parser.add_argument(
         "--label",
         type=str,
         default="",
@@ -140,39 +144,46 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = EXPERIMENT_CONFIG[args.experiment]
-    output_path: Path = config["output"]
-    collect_script: Path = config["collect_script"]
-    selected_size: str = args.size if args.size is not None else str(config.get("default_size", "4M"))
-
     binary = _resolve_binary(args.binary)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    selected_experiment_ids = list(EXPERIMENT_IDS) if args.experiment == "all" else [args.experiment]
+    print(f"[info] Running data collection for {len(selected_experiment_ids)} experiment(s).", flush=True)
 
-    benchmark_cmd = [
-        str(binary),
-        "--experiment",
-        args.experiment,
-        "--iterations",
-        str(args.iterations),
-        "--warmup",
-        str(args.warmup),
-        "--size",
-        selected_size,
-        "--output",
-        str(output_path),
-    ]
-    if args.validation:
-        benchmark_cmd.append("--validation")
+    for experiment_id in selected_experiment_ids:
+        config = EXPERIMENT_CONFIG[experiment_id]
+        output_path: Path = config["output"]
+        collect_script: Path = config["collect_script"]
+        selected_size: str = args.size if args.size is not None else str(config.get("default_size", "4M"))
 
-    _run_command(benchmark_cmd)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"[info] Experiment {experiment_id} (size={selected_size})", flush=True)
 
-    if not args.no_collect:
-        collect_cmd = [sys.executable, str(collect_script), "--input", str(output_path)]
-        if args.label:
-            collect_cmd.extend(["--label", args.label])
-        _run_command(collect_cmd)
+        benchmark_cmd = [
+            str(binary),
+            "--experiment",
+            experiment_id,
+            "--iterations",
+            str(args.iterations),
+            "--warmup",
+            str(args.warmup),
+            "--size",
+            selected_size,
+            "--output",
+            str(output_path),
+        ]
+        if args.validation:
+            benchmark_cmd.append("--validation")
+        if args.verbose_progress:
+            benchmark_cmd.append("--verbose-progress")
 
-    print("[ok] Data collection completed.")
+        _run_command(benchmark_cmd)
+
+        if not args.no_collect:
+            collect_cmd = [sys.executable, str(collect_script), "--input", str(output_path)]
+            if args.label:
+                collect_cmd.extend(["--label", args.label])
+            _run_command(collect_cmd)
+
+    print("[ok] Data collection completed.", flush=True)
 
 
 if __name__ == "__main__":

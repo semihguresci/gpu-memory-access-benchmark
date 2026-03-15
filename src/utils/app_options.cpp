@@ -165,6 +165,8 @@ AppOptions ArgumentParser::parse(int argc, char** argv, const std::vector<std::s
     app.add_option("--experiment", options.experiment, build_experiment_option_help(available_experiment_ids));
     app.add_option("--iterations", options.timed_iterations, "Timed iterations")->check(CLI::PositiveNumber);
     app.add_option("--warmup", options.warmup_iterations, "Warmup iterations")->check(CLI::NonNegativeNumber);
+    app.add_flag("--verbose-progress", options.verbose_progress,
+                 "Enable verbose per-stage progress logs during experiment execution");
     app.add_option("--size", size_text, "Scratch buffer size in bytes or with K/M/G suffix");
     app.add_option("--output", options.output_path, "Output JSON path");
 

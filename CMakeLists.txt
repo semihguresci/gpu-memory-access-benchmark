@@ -54,12 +54,14 @@ add_executable(gpu_memory_layout_experiments
     src/experiments/sequential_indexing_experiment.cpp
     src/experiments/global_id_mapping_variants_experiment.cpp
     src/experiments/aos_soa_experiment.cpp
+    src/experiments/aosoa_blocked_layout_experiment.cpp
     src/experiments/adapters/dispatch_basics_adapter.cpp
     src/experiments/adapters/local_size_sweep_adapter.cpp
     src/experiments/adapters/memory_copy_baseline_adapter.cpp
     src/experiments/adapters/sequential_indexing_adapter.cpp
     src/experiments/adapters/global_id_mapping_variants_adapter.cpp
     src/experiments/adapters/aos_soa_adapter.cpp
+    src/experiments/adapters/aosoa_blocked_layout_adapter.cpp
     src/utils/app_options.cpp
     src/utils/json_exporter.cpp
     src/utils/vulkan_compute_utils.cpp
@@ -112,7 +114,7 @@ target_compile_definitions(gpu_memory_layout_experiments
 
 if(BUILD_SHADERS)
     if(DEFINED Vulkan_GLSLC_EXECUTABLE AND EXISTS "${Vulkan_GLSLC_EXECUTABLE}")
-        file(GLOB SHADER_SOURCES CONFIGURE_DEPENDS
+        file(GLOB_RECURSE SHADER_SOURCES CONFIGURE_DEPENDS
             "${SHADER_SOURCE_DIR}/*.comp"
             "${SHADER_SOURCE_DIR}/*.vert"
             "${SHADER_SOURCE_DIR}/*.frag"
@@ -121,13 +123,14 @@ if(BUILD_SHADERS)
         set(SPIRV_OUTPUTS)
         foreach(SHADER_FILE IN LISTS SHADER_SOURCES)
             get_filename_component(SHADER_NAME "${SHADER_FILE}" NAME)
+            file(RELATIVE_PATH SHADER_RELATIVE_PATH "${SHADER_SOURCE_DIR}" "${SHADER_FILE}")
             set(SPIRV_FILE "${SHADER_BINARY_DIR}/${SHADER_NAME}.spv")
 
             add_custom_command(
                 OUTPUT "${SPIRV_FILE}"
                 COMMAND "${Vulkan_GLSLC_EXECUTABLE}" "${SHADER_FILE}" -o "${SPIRV_FILE}"
                 DEPENDS "${SHADER_FILE}"
-                COMMENT "Compiling shader ${SHADER_NAME}"
+                COMMENT "Compiling shader ${SHADER_RELATIVE_PATH}"
                 VERBATIM
             )
 

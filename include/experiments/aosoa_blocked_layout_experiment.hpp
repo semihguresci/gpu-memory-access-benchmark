@@ -8,18 +8,20 @@
 
 class VulkanContext;
 
-struct AosSoaExperimentConfig {
+struct AosoaBlockedLayoutExperimentConfig {
     std::size_t max_buffer_bytes = 0;
     std::string aos_shader_path;
     std::string soa_shader_path;
+    std::string aosoa_shader_path;
     bool verbose_progress = false;
 };
 
-struct AosSoaExperimentOutput {
+struct AosoaBlockedLayoutExperimentOutput {
     std::vector<BenchmarkResult> summary_results;
     std::vector<BenchmarkMeasurementRow> rows;
     bool all_points_correct = true;
 };
 
-AosSoaExperimentOutput run_aos_soa_experiment(VulkanContext& context, const BenchmarkRunner& runner,
-                                              const AosSoaExperimentConfig& config);
+AosoaBlockedLayoutExperimentOutput
+run_aosoa_blocked_layout_experiment(VulkanContext& context, const BenchmarkRunner& runner,
+                                    const AosoaBlockedLayoutExperimentConfig& config);
