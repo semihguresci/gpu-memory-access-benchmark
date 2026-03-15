@@ -25,6 +25,11 @@ EXPERIMENT_CONFIG = {
         "collect_script": ROOT / "experiments" / "03_memory_copy_baseline" / "scripts" / "collect_run.py",
         "default_size": "64M",
     },
+    "04_sequential_indexing": {
+        "output": ROOT / "experiments" / "04_sequential_indexing" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "04_sequential_indexing" / "scripts" / "collect_run.py",
+        "default_size": "64M",
+    },
 }
 
 
@@ -68,7 +73,7 @@ def main() -> None:
         "--experiment",
         type=str,
         default="01_dispatch_basics",
-        choices=["01_dispatch_basics", "02_local_size_sweep", "03_memory_copy_baseline"],
+        choices=["01_dispatch_basics", "02_local_size_sweep", "03_memory_copy_baseline", "04_sequential_indexing"],
         help="Experiment id to run and collect.",
     )
     parser.add_argument(

@@ -30,6 +30,17 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "BUILD_SHADERS": "ON"
       }
+    },
+    {
+      "name": "windows-tests-vs",
+      "displayName": "Windows Tests VS",
+      "description": "Visual Studio test build directory with shader auto-compilation enabled.",
+      "inherits": "windows-x64",
+      "binaryDir": "${sourceDir}/build-tests-vs",
+      "cacheVariables": {
+        "BUILD_SHADERS": "ON",
+        "ENABLE_GPU_INTEGRATION_TESTS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -43,6 +54,18 @@
       "name": "x64-release",
       "displayName": "x64 Release",
       "configurePreset": "windows-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "tests-vs-debug",
+      "displayName": "Tests VS Debug",
+      "configurePreset": "windows-tests-vs",
+      "configuration": "Debug"
+    },
+    {
+      "name": "tests-vs-release",
+      "displayName": "Tests VS Release",
+      "configurePreset": "windows-tests-vs",
       "configuration": "Release"
     }
   ]

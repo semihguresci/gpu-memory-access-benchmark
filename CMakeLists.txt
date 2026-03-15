@@ -51,10 +51,12 @@ add_executable(gpu_memory_layout_experiments
     src/experiments/dispatch_basics_experiment.cpp
     src/experiments/local_size_sweep_experiment.cpp
     src/experiments/memory_copy_baseline_experiment.cpp
+    src/experiments/sequential_indexing_experiment.cpp
     src/experiments/aos_soa_experiment.cpp
     src/experiments/adapters/dispatch_basics_adapter.cpp
     src/experiments/adapters/local_size_sweep_adapter.cpp
     src/experiments/adapters/memory_copy_baseline_adapter.cpp
+    src/experiments/adapters/sequential_indexing_adapter.cpp
     src/experiments/adapters/aos_soa_adapter.cpp
     src/utils/app_options.cpp
     src/utils/json_exporter.cpp

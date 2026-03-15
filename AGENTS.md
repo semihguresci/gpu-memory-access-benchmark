@@ -17,6 +17,25 @@ Target: production-quality Vulkan compute code in modern C++.
 - Treat new `clang-tidy` diagnostics in changed code as actionable; fix them or document a concrete reason when suppression is required.
 - Keep tooling changes scoped and intentional: do not reformat unrelated files in the same change.
 
+## Build and Preset Workflow
+- Prefer CMake presets over ad-hoc build directories.
+- For Visual Studio test/development runs, use:
+  - `cmake --preset windows-tests-vs`
+  - `cmake --build --preset tests-vs-release --target gpu_memory_layout_experiments`
+- `windows-tests-vs` must keep shader auto-compilation enabled (`BUILD_SHADERS=ON`).
+- Before collecting benchmark data, ensure the selected binary has been rebuilt after experiment registration changes.
+- If `scripts/run_experiment_data_collection.py` resolves a stale binary, provide `--binary` explicitly.
+
+## Experiment Results Workflow
+- For each experiment, keep `experiments/<id>/results.md` as a concise, data-backed run report.
+- Include:
+  - run/test status
+  - hardware and run configuration metadata
+  - key measured values from generated CSV/JSON outputs
+  - short interpretation with explicit limitations
+- Link to generated charts/tables under `experiments/<id>/results/`.
+- When charts/tables are regenerated, update `results.md` so referenced artifacts match current files and remove stale entries.
+
 
 ## File and Type Structure
 - Use one primary public type per header/source pair.
