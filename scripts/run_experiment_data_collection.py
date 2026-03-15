@@ -9,8 +9,18 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUTPUT = ROOT / "experiments" / "01_dispatch_basics" / "results" / "tables" / "benchmark_results.json"
-COLLECT_SCRIPT = ROOT / "experiments" / "01_dispatch_basics" / "scripts" / "collect_run.py"
+EXPERIMENT_CONFIG = {
+    "01_dispatch_basics": {
+        "output": ROOT / "experiments" / "01_dispatch_basics" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "01_dispatch_basics" / "scripts" / "collect_run.py",
+        "default_size": "4M",
+    },
+    "02_local_size_sweep": {
+        "output": ROOT / "experiments" / "02_local_size_sweep" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "02_local_size_sweep" / "scripts" / "collect_run.py",
+        "default_size": "32M",
+    },
+}
 
 
 def _resolve_binary(explicit_path: str | None) -> Path:
@@ -25,6 +35,10 @@ def _resolve_binary(explicit_path: str | None) -> Path:
     candidates = [
         ROOT / "build" / "Release" / "gpu_memory_layout_experiments.exe",
         ROOT / "build" / "Debug" / "gpu_memory_layout_experiments.exe",
+        ROOT / "build" / "windows-x64" / "Release" / "gpu_memory_layout_experiments.exe",
+        ROOT / "build" / "windows-x64" / "Debug" / "gpu_memory_layout_experiments.exe",
+        ROOT / "build-tests-vs" / "Release" / "gpu_memory_layout_experiments.exe",
+        ROOT / "build-tests-vs" / "Debug" / "gpu_memory_layout_experiments.exe",
         ROOT / "build" / "gpu_memory_layout_experiments.exe",
         ROOT / "build" / "gpu_memory_layout_experiments",
     ]
@@ -44,8 +58,13 @@ def _run_command(args: list[str]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run Experiment 01 benchmark and collect fresh run data (no chart generation)."
+    parser = argparse.ArgumentParser(description="Run benchmark and collect fresh run data (no chart generation).")
+    parser.add_argument(
+        "--experiment",
+        type=str,
+        default="01_dispatch_basics",
+        choices=["01_dispatch_basics", "02_local_size_sweep"],
+        help="Experiment id to run and collect.",
     )
     parser.add_argument(
         "--binary",
@@ -68,8 +87,8 @@ def main() -> None:
     parser.add_argument(
         "--size",
         type=str,
-        default="4M",
-        help="Scratch buffer size for benchmark run (e.g. 4M).",
+        default=None,
+        help="Scratch buffer size for benchmark run (e.g. 4M). If omitted, uses experiment default.",
     )
     parser.add_argument(
         "--validation",
@@ -85,25 +104,30 @@ def main() -> None:
     parser.add_argument(
         "--no-collect",
         action="store_true",
-        help="Skip collecting the run into experiments/01_dispatch_basics/runs.",
+        help="Skip collecting the run into experiments/<experiment>/runs.",
     )
     args = parser.parse_args()
 
+    config = EXPERIMENT_CONFIG[args.experiment]
+    output_path: Path = config["output"]
+    collect_script: Path = config["collect_script"]
+    selected_size: str = args.size if args.size is not None else str(config.get("default_size", "4M"))
+
     binary = _resolve_binary(args.binary)
-    DEFAULT_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     benchmark_cmd = [
         str(binary),
         "--experiment",
-        "01_dispatch_basics",
+        args.experiment,
         "--iterations",
         str(args.iterations),
         "--warmup",
         str(args.warmup),
         "--size",
-        args.size,
+        selected_size,
         "--output",
-        str(DEFAULT_OUTPUT),
+        str(output_path),
     ]
     if args.validation:
         benchmark_cmd.append("--validation")
@@ -111,7 +135,7 @@ def main() -> None:
     _run_command(benchmark_cmd)
 
     if not args.no_collect:
-        collect_cmd = [sys.executable, str(COLLECT_SCRIPT), "--input", str(DEFAULT_OUTPUT)]
+        collect_cmd = [sys.executable, str(collect_script), "--input", str(output_path)]
         if args.label:
             collect_cmd.extend(["--label", args.label])
         _run_command(collect_cmd)
