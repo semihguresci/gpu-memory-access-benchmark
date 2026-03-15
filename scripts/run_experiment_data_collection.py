@@ -20,6 +20,11 @@ EXPERIMENT_CONFIG = {
         "collect_script": ROOT / "experiments" / "02_local_size_sweep" / "scripts" / "collect_run.py",
         "default_size": "32M",
     },
+    "03_memory_copy_baseline": {
+        "output": ROOT / "experiments" / "03_memory_copy_baseline" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "03_memory_copy_baseline" / "scripts" / "collect_run.py",
+        "default_size": "64M",
+    },
 }
 
 
@@ -63,7 +68,7 @@ def main() -> None:
         "--experiment",
         type=str,
         default="01_dispatch_basics",
-        choices=["01_dispatch_basics", "02_local_size_sweep"],
+        choices=["01_dispatch_basics", "02_local_size_sweep", "03_memory_copy_baseline"],
         help="Experiment id to run and collect.",
     )
     parser.add_argument(
