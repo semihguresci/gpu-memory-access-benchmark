@@ -40,6 +40,11 @@ EXPERIMENT_CONFIG = {
         "collect_script": ROOT / "experiments" / "05_global_id_mapping_variants" / "scripts" / "collect_run.py",
         "default_size": "64M",
     },
+    "06_aos_vs_soa": {
+        "output": ROOT / "experiments" / "06_aos_vs_soa" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "06_aos_vs_soa" / "scripts" / "collect_run.py",
+        "default_size": "64M",
+    },
 }
 
 
@@ -89,6 +94,7 @@ def main() -> None:
             "03_memory_copy_baseline",
             "04_sequential_indexing",
             "05_global_id_mapping_variants",
+            "06_aos_vs_soa",
         ],
         help="Experiment id to run and collect.",
     )

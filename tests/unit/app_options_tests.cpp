@@ -8,7 +8,7 @@
 #include <gtest/gtest.h>
 
 TEST(AppOptionsTests, ParsesAllExperimentsAndNormalizesOutputExtension) {
-    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics", "06_aos_soa"};
+    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics", "06_aos_vs_soa"};
     const std::vector<std::string> args = {
         "gpu_memory_layout_experiments",
         "--experiment",
@@ -34,11 +34,11 @@ TEST(AppOptionsTests, ParsesAllExperimentsAndNormalizesOutputExtension) {
 }
 
 TEST(AppOptionsTests, ParsesSpecificExperimentsWithTrimAndDeduplication) {
-    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics", "06_aos_soa"};
+    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics", "06_aos_vs_soa"};
     const std::vector<std::string> args = {
         "gpu_memory_layout_experiments",
         "--experiment",
-        " 06_aos_soa, 01_dispatch_basics,06_aos_soa ",
+        " 06_aos_vs_soa, 01_dispatch_basics,06_aos_vs_soa ",
         "--iterations",
         "5",
         "--warmup",
@@ -51,7 +51,7 @@ TEST(AppOptionsTests, ParsesSpecificExperimentsWithTrimAndDeduplication) {
 
     const AppOptions options = TestSupport::parse_app_options(args, available_experiment_ids);
 
-    const std::vector<std::string> expected_ids = {"06_aos_soa", "01_dispatch_basics"};
+    const std::vector<std::string> expected_ids = {"06_aos_vs_soa", "01_dispatch_basics"};
     EXPECT_EQ(options.selected_experiment_ids, expected_ids);
     EXPECT_EQ(options.scratch_size_bytes, static_cast<VkDeviceSize>(1024));
     EXPECT_EQ(options.output_path, "out.json");

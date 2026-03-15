@@ -14,5 +14,11 @@ struct AosSoaExperimentConfig {
     std::string soa_shader_path;
 };
 
-std::vector<BenchmarkResult> run_aos_soa_experiment(VulkanContext& context, const BenchmarkRunner& runner,
-                                                    const AosSoaExperimentConfig& config);
+struct AosSoaExperimentOutput {
+    std::vector<BenchmarkResult> summary_results;
+    std::vector<BenchmarkMeasurementRow> rows;
+    bool all_points_correct = true;
+};
+
+AosSoaExperimentOutput run_aos_soa_experiment(VulkanContext& context, const BenchmarkRunner& runner,
+                                              const AosSoaExperimentConfig& config);

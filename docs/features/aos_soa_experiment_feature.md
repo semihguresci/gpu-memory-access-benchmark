@@ -25,9 +25,12 @@ Measures compute performance differences between Array-of-Structs (AoS) and Stru
 - Final fallback uses maximum feasible particle count if non-zero.
 
 ## Measurement Path
-- Uses `BenchmarkRunner::run_timed(...)`.
+- Uses explicit warmup and timed loops driven by `BenchmarkRunner` iteration settings.
 - GPU timing comes from `VulkanContext::measure_gpu_time_ms(...)`.
-- Emits one `BenchmarkResult` per `(layout, particle_count)`.
+- Emits:
+  - one `BenchmarkResult` per `(layout, particle_count)`
+  - one `BenchmarkMeasurementRow` per timed iteration
+  - correctness pass/fail status per row
 
 ## Resource Lifecycle
 - Builds AoS and SoA resources independently.

@@ -94,7 +94,7 @@ ctest --test-dir build-tests-vs -C Debug -L integration --output-on-failure
 - do not rely on system GPU state in unit tests
 
 ## Expansion Roadmap
-1. Add adapter-level integration tests for `01_dispatch_basics` and `06_aos_soa`.
+1. Add adapter-level integration tests for `01_dispatch_basics` and `06_aos_vs_soa`.
 2. Add schema compatibility tests for future JSON schema version bumps.
 3. Add negative tests for shader/module load failures in adapter paths.
 4. Add contract tests for generated experiment registry behavior.

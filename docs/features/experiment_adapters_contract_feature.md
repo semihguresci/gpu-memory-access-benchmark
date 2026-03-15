@@ -21,7 +21,7 @@ Normalizes experiment-specific outputs into a single runtime contract used by th
 - return: `bool` success indicator
 
 ## Adapter Responsibilities
-- Convert each experiment’s native output shape into `ExperimentRunOutput`.
+- Convert each experiment's native output shape into `ExperimentRunOutput`.
 - Keep experiment-specific failure semantics local.
 - Populate clear error messages for top-level reporting.
 
@@ -33,6 +33,8 @@ Normalizes experiment-specific outputs into a single runtime contract used by th
 - AoS vs SoA adapter:
   - forwards scratch size and shader defaults
   - requires non-empty summaries
+  - enforces `all_points_correct`
+  - forwards row-level measurements
 
 ## Why This Matters
 - `main.cpp` no longer needs experiment-specific branching.

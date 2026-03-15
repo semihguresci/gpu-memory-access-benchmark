@@ -68,7 +68,7 @@ TEST(JsonExporterTests, WritesRowsAndMetadataFields) {
     };
 
     const std::vector<BenchmarkMeasurementRow> rows = {
-        BenchmarkMeasurementRow{.experiment_id = "06_aos_soa",
+        BenchmarkMeasurementRow{.experiment_id = "06_aos_vs_soa",
                                 .variant = "aos",
                                 .problem_size = 131072,
                                 .dispatch_count = 1,
@@ -108,7 +108,7 @@ TEST(JsonExporterTests, WritesRowsAndMetadataFields) {
 
     ASSERT_TRUE(root.contains("rows"));
     ASSERT_EQ(root["rows"].size(), 1U);
-    EXPECT_EQ(root["rows"][0]["experiment_id"], "06_aos_soa");
+    EXPECT_EQ(root["rows"][0]["experiment_id"], "06_aos_vs_soa");
     EXPECT_EQ(root["rows"][0]["variant"], "aos");
     EXPECT_EQ(root["rows"][0]["correctness_pass"], true);
 }
