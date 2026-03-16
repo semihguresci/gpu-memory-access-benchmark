@@ -1,0 +1,40 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct ParticleVec3Padded {
+    vec3 coeffs;
+    vec3 position;
+    vec3 velocity;
+    float mass;
+    float dt;
+};
+
+layout(std430, binding = 0) buffer Particles {
+    ParticleVec3Padded data[];
+};
+
+layout(push_constant) uniform Params {
+    uint count;
+} params;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= params.count) {
+        return;
+    }
+
+    ParticleVec3Padded particle = data[id];
+
+    vec3 adv = (particle.velocity * particle.dt) + (particle.coeffs * 0.001);
+    particle.position += adv;
+    particle.velocity += particle.coeffs * 0.0002;
+    particle.mass += (particle.coeffs.x * 0.0003) + (particle.position.z * 0.00001);
+    particle.dt = (particle.dt * 0.999) + 0.0000025;
+    particle.coeffs.x += 0.0001;
+    particle.coeffs.y += 0.0002;
+    particle.coeffs.z += 0.0003;
+
+    data[id] = particle;
+}
+

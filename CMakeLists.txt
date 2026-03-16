@@ -56,6 +56,7 @@ add_executable(gpu_memory_layout_experiments
     src/experiments/aos_soa_experiment.cpp
     src/experiments/aosoa_blocked_layout_experiment.cpp
     src/experiments/std430_std140_packed_experiment.cpp
+    src/experiments/vec3_vec4_padding_costs_experiment.cpp
     src/experiments/adapters/dispatch_basics_adapter.cpp
     src/experiments/adapters/local_size_sweep_adapter.cpp
     src/experiments/adapters/memory_copy_baseline_adapter.cpp
@@ -64,6 +65,7 @@ add_executable(gpu_memory_layout_experiments
     src/experiments/adapters/aos_soa_adapter.cpp
     src/experiments/adapters/aosoa_blocked_layout_adapter.cpp
     src/experiments/adapters/std430_std140_packed_adapter.cpp
+    src/experiments/adapters/vec3_vec4_padding_costs_adapter.cpp
     src/utils/app_options.cpp
     src/utils/json_exporter.cpp
     src/utils/vulkan_compute_utils.cpp

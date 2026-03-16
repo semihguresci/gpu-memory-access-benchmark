@@ -1,0 +1,47 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct ParticleVec4 {
+    vec4 coeffs_mass;
+    vec4 position_dt;
+    vec4 velocity_padding;
+};
+
+layout(std430, binding = 0) buffer Particles {
+    ParticleVec4 data[];
+};
+
+layout(push_constant) uniform Params {
+    uint count;
+} params;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= params.count) {
+        return;
+    }
+
+    ParticleVec4 particle = data[id];
+
+    vec3 coeffs = particle.coeffs_mass.xyz;
+    vec3 position = particle.position_dt.xyz;
+    vec3 velocity = particle.velocity_padding.xyz;
+    float mass = particle.coeffs_mass.w;
+    float dt = particle.position_dt.w;
+
+    vec3 adv = (velocity * dt) + (coeffs * 0.001);
+    position += adv;
+    velocity += coeffs * 0.0002;
+    mass += (coeffs.x * 0.0003) + (position.z * 0.00001);
+    dt = (dt * 0.999) + 0.0000025;
+    coeffs.x += 0.0001;
+    coeffs.y += 0.0002;
+    coeffs.z += 0.0003;
+
+    particle.coeffs_mass = vec4(coeffs, mass);
+    particle.position_dt = vec4(position, dt);
+    particle.velocity_padding = vec4(velocity, particle.velocity_padding.w);
+    data[id] = particle;
+}
+

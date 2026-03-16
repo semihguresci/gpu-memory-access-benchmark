@@ -7,4 +7,5 @@ set(EXPERIMENT_MANIFEST_ENTRIES
     "06_aos_vs_soa|AoS vs SoA|memory_layout|run_aos_soa_experiment_adapter|ON"
     "07_aosoa_blocked_layout|AoSoA Blocked Layout|memory_layout|run_aosoa_blocked_layout_experiment_adapter|ON"
     "08_std430_std140_packed|std430 vs std140 vs Packed|memory_layout|run_std430_std140_packed_experiment_adapter|ON"
+    "09_vec3_vec4_padding_costs|vec3 vs vec4 Padding Costs|memory_layout|run_vec3_vec4_padding_costs_experiment_adapter|ON"
 )

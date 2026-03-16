@@ -1,0 +1,70 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer ScalarArrays {
+    float data[];
+};
+
+layout(push_constant) uniform Params {
+    uint count;
+} params;
+
+const uint kCoeff0Array = 0u;
+const uint kCoeff1Array = 1u;
+const uint kCoeff2Array = 2u;
+const uint kPosXArray = 3u;
+const uint kPosYArray = 4u;
+const uint kPosZArray = 5u;
+const uint kVelXArray = 6u;
+const uint kVelYArray = 7u;
+const uint kVelZArray = 8u;
+const uint kMassArray = 9u;
+const uint kDtArray = 10u;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= params.count) {
+        return;
+    }
+
+    uint coeff0_offset = (kCoeff0Array * params.count) + id;
+    uint coeff1_offset = (kCoeff1Array * params.count) + id;
+    uint coeff2_offset = (kCoeff2Array * params.count) + id;
+    uint pos_x_offset = (kPosXArray * params.count) + id;
+    uint pos_y_offset = (kPosYArray * params.count) + id;
+    uint pos_z_offset = (kPosZArray * params.count) + id;
+    uint vel_x_offset = (kVelXArray * params.count) + id;
+    uint vel_y_offset = (kVelYArray * params.count) + id;
+    uint vel_z_offset = (kVelZArray * params.count) + id;
+    uint mass_offset = (kMassArray * params.count) + id;
+    uint dt_offset = (kDtArray * params.count) + id;
+
+    vec3 coeffs = vec3(data[coeff0_offset], data[coeff1_offset], data[coeff2_offset]);
+    vec3 position = vec3(data[pos_x_offset], data[pos_y_offset], data[pos_z_offset]);
+    vec3 velocity = vec3(data[vel_x_offset], data[vel_y_offset], data[vel_z_offset]);
+    float mass = data[mass_offset];
+    float dt = data[dt_offset];
+
+    vec3 adv = (velocity * dt) + (coeffs * 0.001);
+    position += adv;
+    velocity += coeffs * 0.0002;
+    mass += (coeffs.x * 0.0003) + (position.z * 0.00001);
+    dt = (dt * 0.999) + 0.0000025;
+    coeffs.x += 0.0001;
+    coeffs.y += 0.0002;
+    coeffs.z += 0.0003;
+
+    data[coeff0_offset] = coeffs.x;
+    data[coeff1_offset] = coeffs.y;
+    data[coeff2_offset] = coeffs.z;
+    data[pos_x_offset] = position.x;
+    data[pos_y_offset] = position.y;
+    data[pos_z_offset] = position.z;
+    data[vel_x_offset] = velocity.x;
+    data[vel_y_offset] = velocity.y;
+    data[vel_z_offset] = velocity.z;
+    data[mass_offset] = mass;
+    data[dt_offset] = dt;
+}
+

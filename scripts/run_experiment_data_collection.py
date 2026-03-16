@@ -55,6 +55,11 @@ EXPERIMENT_CONFIG = {
         "collect_script": ROOT / "experiments" / "08_std430_std140_packed" / "scripts" / "collect_run.py",
         "default_size": "128M",
     },
+    "09_vec3_vec4_padding_costs": {
+        "output": ROOT / "experiments" / "09_vec3_vec4_padding_costs" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "09_vec3_vec4_padding_costs" / "scripts" / "collect_run.py",
+        "default_size": "128M",
+    },
 }
 EXPERIMENT_IDS = tuple(EXPERIMENT_CONFIG.keys())
 
