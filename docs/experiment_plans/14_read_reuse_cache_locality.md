@@ -1,9 +1,9 @@
 # Experiment 14: Read Reuse and Cache Locality
 
 ## 1. Lecture Focus
-- Concept: Temporal locality and reuse-distance effects.
-- Why this matters: Teaches why access order can matter as much as algorithmic complexity on GPU.
-- Central question: How much benefit is retained as reuse distance increases?
+- Concept: Temporal locality and controlled reuse-distance effects.
+- Why this matters: Many production kernels reread hot inputs, and the value of a good access schedule depends on whether reuse arrives before data ages out of effective cache.
+- Central question: How rapidly does the benefit of a second read decay as the gap between touches widens?
 
 ## 2. Learning Objectives
 By the end of this experiment, you should be able to:
@@ -13,40 +13,40 @@ By the end of this experiment, you should be able to:
 - document practical rules you would apply in production kernels
 
 ## 3. Theory Primer (Lecture Notes)
-- Start from the execution model: workgroups, waves/warps, and memory transactions.
-- Identify whether the kernel is likely memory-bound, latency-bound, or synchronization-bound.
-- Predict how this experiment changes transaction shape, locality, pressure, or control-flow efficiency.
-- Record assumptions explicitly before measuring so conclusions can be tested, not guessed.
+- Distinguish spatial locality from temporal locality: even when first touches stay contiguous, the timing of the second touch can still change performance.
+- Treat reuse distance as "how many other reads happen before the same element is touched again".
+- Expect benefit only while the reused footprint fits within an effective cache residency window; beyond that, the second touch behaves closer to a fresh read.
+- Use a design that avoids mistaking compiler register reuse or loop-invariant elimination for memory-system behavior.
 
 ## 4. Hypothesis
-Near-term reuse benefits caches; far-distance reuse approaches single-use cost.
+Paired rereads with short reuse distance outperform far-distance paired rereads; a full-span second pass approaches the no-useful-reuse baseline.
 
 ## 5. Experimental Design
 ### Independent variables
-Patterns: single-read, near-reuse loop, far-reuse loop with tunable distance.
+Reuse schedules: `reuse_distance_1`, `reuse_distance_32`, `reuse_distance_256`, `reuse_distance_4096`, `reuse_distance_full_span`.
 
 ### Controlled variables
-Same total arithmetic and total reads where possible.
+Same logical invocation count, same two touches per unique source element, same sequential destination write pattern, same arithmetic, same workgroup size, and same source element type.
 
 ### Workload design
-Synthetic reuse kernels over large arrays with configurable reuse distance.
+Host-generated index schedules where each source element appears exactly twice and only the gap between those two appearances changes.
 
 ## 6. Implementation Plan
-1. Implement or select the shader variant(s) that isolate this concept.
-2. Wire host-side sweep parameters into CLI/config.
-3. Add correctness checks against deterministic CPU reference outputs.
+1. Use a gather-style shader with one source read and one sequential destination write per invocation.
+2. Generate deterministic pair-reuse index schedules on the host and keep the source buffer fixed to `count / 2` unique elements.
+3. Add exact CPU reference validation for destination values and index-buffer invariance.
 4. Run warmup iterations before measured iterations.
-5. Capture raw timing and metadata for every run.
-6. Export results in machine-readable format for plotting.
+5. Capture raw timing, reuse-distance metadata, and environment details for every run.
+6. Export machine-readable results for plotting slowdown and speedup curves.
 
 ## 7. Measurement Protocol
 - Timing source: GPU timestamp queries for dispatch timing.
-- Reporting: median as primary, p95 as stability indicator.
-- Run policy: multiple repetitions per point, fixed seeds for reproducibility.
-- Metadata: GPU model, driver, Vulkan version, OS, compiler flags, shader options.
+- Reporting: median as primary, p95 as stability indicator, plus normalized speedup versus `reuse_distance_full_span`.
+- Run policy: multiple repetitions per point, even logical count, deterministic schedule generation.
+- Metadata: GPU model, driver, Vulkan version, OS, compiler flags, and reuse-schedule parameters.
 
 ## 8. Data to Capture
-Runtime, reuse-distance sensitivity, relative speedup vs no-reuse baseline.
+Runtime, reuse-distance sensitivity, speedup versus the far-distance baseline, and stability across reuse distances.
 
 Recommended columns:
 - experiment_id
@@ -61,19 +61,19 @@ Recommended columns:
 
 ## 9. Expected Patterns and Interpretation
 
-Performance declines as reuse distance exceeds effective cache residency window.
+Short-distance pairs should produce the best times; benefit should decay with larger reuse blocks and flatten between the largest-distance and full-span cases.
 
 Interpretation checklist:
 - confirm correctness before comparing performance
-- separate overhead-bound region from steady-state region
-- compare against baseline experiments (01, 03, 04, 15 where relevant)
-- highlight both absolute and normalized deltas
+- separate the cache-helped region from the long-distance plateau
+- compare against Experiment 12 distributions and Experiment 15 saturation data where relevant
+- treat any plateau as architecture-specific evidence, not as a direct proof of cache size
 
 ## 10. Common Failure Modes
-Accidental compiler caching effects and unintentional loop invariant elimination.
+Accidentally benchmarking compiler/register reuse instead of memory reuse, incorrect tail handling for partial pair blocks, and silently changing unique-source count across variants.
 
 ## 11. Deliverables
-Locality vs runtime chart and reuse-distance interpretation.
+Reuse-distance curve, normalized speedup table, and a short locality interpretation.
 
 Minimum artifact set:
 - one results table (csv/json)
@@ -81,6 +81,6 @@ Minimum artifact set:
 - one short analysis section with explicit limitations
 
 ## 12. Follow-Up Link
-Apply locality insights to ordering strategies in later culling and GPU-driven pipelines.
+Use the measured locality window to justify tiling, staging, and ordering choices in Experiments 16-17 and later rendering-adjacent systems.
 
 

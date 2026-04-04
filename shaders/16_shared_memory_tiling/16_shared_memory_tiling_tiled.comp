@@ -1,0 +1,47 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+const uint kWorkgroupSize = 256u;
+const uint kMaxRadius = 16u;
+shared uint tile[kWorkgroupSize + (2u * kMaxRadius)];
+
+layout(set = 0, binding = 0, std430) readonly buffer SourceBuffer {
+    uint values[];
+} src_buffer;
+
+layout(set = 0, binding = 1, std430) writeonly buffer DestinationBuffer {
+    uint values[];
+} dst_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint output_count;
+    uint radius;
+    uint center_offset;
+} pc;
+
+void main() {
+    uint global_index = gl_GlobalInvocationID.x;
+    uint local_index = gl_LocalInvocationID.x;
+    uint group_start = gl_WorkGroupID.x * kWorkgroupSize;
+    uint tile_start = group_start + pc.center_offset - pc.radius;
+    uint active_tile_span = kWorkgroupSize + (2u * pc.radius);
+
+    for (uint load_index = local_index; load_index < active_tile_span; load_index += kWorkgroupSize) {
+        tile[load_index] = src_buffer.values[tile_start + load_index];
+    }
+
+    barrier();
+
+    if (global_index >= pc.output_count) {
+        return;
+    }
+
+    uint sum = 0u;
+    uint sample_count = (2u * pc.radius) + 1u;
+    for (uint offset = 0u; offset < sample_count; ++offset) {
+        sum += tile[local_index + offset];
+    }
+
+    dst_buffer.values[global_index] = sum;
+}

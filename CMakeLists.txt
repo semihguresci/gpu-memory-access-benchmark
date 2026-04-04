@@ -59,6 +59,11 @@ add_executable(gpu_memory_layout_experiments
     src/experiments/vec3_vec4_padding_costs_experiment.cpp
     src/experiments/scalar_type_width_sweep_experiment.cpp
     src/experiments/coalesced_vs_strided_experiment.cpp
+    src/experiments/gather_access_pattern_experiment.cpp
+    src/experiments/scatter_access_pattern_experiment.cpp
+    src/experiments/read_reuse_cache_locality_experiment.cpp
+    src/experiments/bandwidth_saturation_sweep_experiment.cpp
+    src/experiments/shared_memory_tiling_experiment.cpp
     src/experiments/adapters/dispatch_basics_adapter.cpp
     src/experiments/adapters/local_size_sweep_adapter.cpp
     src/experiments/adapters/memory_copy_baseline_adapter.cpp
@@ -70,6 +75,11 @@ add_executable(gpu_memory_layout_experiments
     src/experiments/adapters/vec3_vec4_padding_costs_adapter.cpp
     src/experiments/adapters/scalar_type_width_sweep_adapter.cpp
     src/experiments/adapters/coalesced_vs_strided_adapter.cpp
+    src/experiments/adapters/gather_access_pattern_adapter.cpp
+    src/experiments/adapters/scatter_access_pattern_adapter.cpp
+    src/experiments/adapters/read_reuse_cache_locality_adapter.cpp
+    src/experiments/adapters/bandwidth_saturation_sweep_adapter.cpp
+    src/experiments/adapters/shared_memory_tiling_adapter.cpp
     src/utils/app_options.cpp
     src/utils/json_exporter.cpp
     src/utils/vulkan_compute_utils.cpp

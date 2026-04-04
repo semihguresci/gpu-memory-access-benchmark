@@ -1,35 +1,32 @@
-# Experiment 07 Results
+# Experiment 07 Results: AoSoA Blocked Layout
 
-## Run Snapshot
-- Status: smoke run completed (`18/18` correctness pass)
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2479554560`)
-- Config: `--iterations 1 --warmup 0 --size 256M`
-- Latest run: `runs/nvidia_geforce_rtx_2080_super/20260315_141304Z.json`
+## Run Status
+- Benchmark status: latest `full_refresh_20260329` collection completed (`120/120` row correctness pass)
+- Test status: no additional tests were run during this report refresh
+- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
+- Config: `--iterations 5 --warmup 2 --size 512M --label full_refresh_20260329`
+- Validation layers: `disabled`
+- GPU timestamps: `supported`
+- Raw export timestamp (UTC): `2026-03-29T14:33:34Z`
+- Latest collected run: [runs/nvidia_geforce_rtx_2080_super/20260329_143334Z_full_refresh_20260329.json](./runs/nvidia_geforce_rtx_2080_super/20260329_143334Z_full_refresh_20260329.json)
+- Sweep coverage: `6` variants x `4` problem sizes
 
-## Key Measurements (Smoke)
-- `problem_size=4000000`:
-  - `soa`: `15.030880 ms`, `21.2895 GB/s`
-  - `aosoa_b32`: `15.280352 ms`, `20.9419 GB/s`
-  - `aosoa_b16`: `16.865344 ms`, `18.9738 GB/s`
-  - `aosoa_b8`: `24.027008 ms`, `13.3183 GB/s`
-  - `aosoa_b4`: `37.566496 ms`, `8.5182 GB/s`
-  - `aos`: `216.156160 ms`, `2.3687 GB/s`
+## Key Measurements
+- At the largest tested problem size (`problem_size=8000000`), `soa` measured `32.271904 ms` and `19.831 GB/s`.
+- `aosoa_b32` stayed close at `33.624544 ms` and `19.034 GB/s`, only `1.042x` slower than `soa`.
+- Smaller blocks degraded steadily: `aosoa_b16` was `1.122x` slower than `soa`, `aosoa_b8` was `1.564x` slower, and `aosoa_b4` was `2.339x` slower.
+- `aos` remained the clear worst case at `448.698080 ms` and `2.282 GB/s`, or `13.904x` slower than `soa`.
 
-## Graphics
-![Dispatch Time](./results/charts/aosoa_blocked_layout_gpu_ms_vs_size.png)
-
-![Effective Bandwidth](./results/charts/aosoa_blocked_layout_gbps_vs_size.png)
-
-![Summary](./results/charts/benchmark_summary.png)
-
-## Data Links
-- [Summary table](./results/tables/aosoa_blocked_layout_summary.csv)
-- [Status overview](./results/tables/aosoa_blocked_layout_status_overview.csv)
-- [Runs index](./results/tables/aosoa_blocked_layout_runs_index.csv)
-- [Multi-run summary](./results/tables/aosoa_blocked_layout_multi_run_summary.csv)
+## Artifact Links
 - [Raw benchmark export](./results/tables/benchmark_results.json)
+- [Current summary table](./results/tables/aosoa_blocked_layout_summary.csv)
+- [GPU time chart](./results/charts/aosoa_blocked_layout_gpu_ms_vs_size.png)
+- [GB/s chart](./results/charts/aosoa_blocked_layout_gbps_vs_size.png)
 
-## Interpretation and Limits
-- This is a smoke dataset only (`timed_iterations=1`), so variance and tail latency are not characterized.
-- Correctness is green for all variants on this run, which validates indexing/packing paths for first-pass implementation.
-- Initial throughput ordering shows `soa` leading, with blocked AoSoA variants clustered behind and `aos` far slower for this access pattern.
+## Interpretation
+- On this GPU, AoSoA only pays when blocks stay large enough to preserve the memory behavior that makes SoA effective. `aosoa_b32` is still effectively tied with SoA in the full-refresh run.
+- Once the block size shrinks, the layout penalty returns quickly. That trend remains monotonic from `b32` down to `b4` in the current dataset.
+
+## Limitations
+- Results come from one GPU and driver stack.
+- The experiment measures a single access pattern; different kernels could shift the best block size.

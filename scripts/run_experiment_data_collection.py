@@ -70,6 +70,46 @@ EXPERIMENT_CONFIG = {
         "collect_script": ROOT / "experiments" / "11_coalesced_vs_strided" / "scripts" / "collect_run.py",
         "default_size": "128M",
     },
+    "12_gather_access_pattern": {
+        "output": ROOT / "experiments" / "12_gather_access_pattern" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "12_gather_access_pattern" / "scripts" / "collect_run.py",
+        "default_size": "32M",
+    },
+    "13_scatter_access_pattern": {
+        "output": ROOT / "experiments" / "13_scatter_access_pattern" / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "13_scatter_access_pattern" / "scripts" / "collect_run.py",
+        "default_size": "32M",
+    },
+    "14_read_reuse_cache_locality": {
+        "output": ROOT
+        / "experiments"
+        / "14_read_reuse_cache_locality"
+        / "results"
+        / "tables"
+        / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "14_read_reuse_cache_locality" / "scripts" / "collect_run.py",
+        "default_size": "32M",
+    },
+    "15_bandwidth_saturation_sweep": {
+        "output": ROOT
+        / "experiments"
+        / "15_bandwidth_saturation_sweep"
+        / "results"
+        / "tables"
+        / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "15_bandwidth_saturation_sweep" / "scripts" / "collect_run.py",
+        "default_size": "512M",
+    },
+    "16_shared_memory_tiling": {
+        "output": ROOT
+        / "experiments"
+        / "16_shared_memory_tiling"
+        / "results"
+        / "tables"
+        / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / "16_shared_memory_tiling" / "scripts" / "collect_run.py",
+        "default_size": "32M",
+    },
 }
 EXPERIMENT_IDS = tuple(EXPERIMENT_CONFIG.keys())
 

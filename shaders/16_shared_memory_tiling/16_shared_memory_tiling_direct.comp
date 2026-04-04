@@ -1,0 +1,34 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer SourceBuffer {
+    uint values[];
+} src_buffer;
+
+layout(set = 0, binding = 1, std430) writeonly buffer DestinationBuffer {
+    uint values[];
+} dst_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint output_count;
+    uint radius;
+    uint center_offset;
+} pc;
+
+void main() {
+    uint logical_index = gl_GlobalInvocationID.x;
+    if (logical_index >= pc.output_count) {
+        return;
+    }
+
+    uint center_index = logical_index + pc.center_offset;
+    uint sum = 0u;
+    uint source_index = center_index - pc.radius;
+    uint sample_count = (2u * pc.radius) + 1u;
+    for (uint offset = 0u; offset < sample_count; ++offset) {
+        sum += src_buffer.values[source_index + offset];
+    }
+
+    dst_buffer.values[logical_index] = sum;
+}

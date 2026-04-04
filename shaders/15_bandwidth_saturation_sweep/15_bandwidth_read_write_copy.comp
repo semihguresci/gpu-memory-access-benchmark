@@ -1,0 +1,24 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer Source {
+    float values[];
+} src;
+
+layout(std430, binding = 1) writeonly buffer Destination {
+    float values[];
+} dst;
+
+layout(push_constant) uniform Params {
+    uint element_count;
+} params;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= params.element_count) {
+        return;
+    }
+
+    dst.values[id] = src.values[id];
+}

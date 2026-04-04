@@ -10,4 +10,9 @@ set(EXPERIMENT_MANIFEST_ENTRIES
     "09_vec3_vec4_padding_costs|vec3 vs vec4 Padding Costs|memory_layout|run_vec3_vec4_padding_costs_experiment_adapter|ON"
     "10_scalar_type_width_sweep|Scalar Type Width Sweep|memory_layout|run_scalar_type_width_sweep_experiment_adapter|ON"
     "11_coalesced_vs_strided|Coalesced vs Strided Access|access_patterns|run_coalesced_vs_strided_experiment_adapter|ON"
+    "12_gather_access_pattern|Gather Access Pattern|access_patterns|run_gather_access_pattern_experiment_adapter|ON"
+    "13_scatter_access_pattern|Scatter Access Pattern|access_patterns|run_scatter_access_pattern_experiment_adapter|ON"
+    "14_read_reuse_cache_locality|Read Reuse and Cache Locality|access_patterns|run_read_reuse_cache_locality_experiment_adapter|ON"
+    "15_bandwidth_saturation_sweep|Bandwidth Saturation Sweep|access_patterns|run_bandwidth_saturation_sweep_experiment_adapter|ON"
+    "16_shared_memory_tiling|Shared Memory Tiling|on_chip_memory|run_shared_memory_tiling_experiment_adapter|ON"
 )

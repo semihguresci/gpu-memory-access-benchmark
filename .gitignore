@@ -25,3 +25,5 @@ local_artifacts/
 /build-clang-ninja-make
 /build-tests
 /build-tests-vs
+/scripts/__pycache__
+/experiments/09_vec3_vec4_padding_costs/scripts/__pycache__
