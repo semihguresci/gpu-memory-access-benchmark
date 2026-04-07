@@ -11,7 +11,7 @@ Bridge objective:
 
 ## 2. How to Use This Roadmap
 Recommended process:
-1. complete the core 25 experiments first
+1. use the completed core 25 experiments, plus the extension studies in Experiments 26-33, as the measurement baseline
 2. identify strongest measured themes (3 to 5)
 3. choose a focused advanced subset
 4. execute deeply and compare variants rigorously

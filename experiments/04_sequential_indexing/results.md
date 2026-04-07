@@ -1,33 +1,34 @@
 # Experiment 04 Results: Sequential Indexing
 
 ## Run Status
-- Benchmark status: latest `full_refresh_20260329` collection completed (`600/600` row correctness pass)
-- Test status: no additional tests were run during this report refresh
+- Benchmark status: latest `full_refresh_20260405` collection completed (`520/520` row correctness pass)
+- Test status: `ctest --test-dir build-tests-vs -C Release --output-on-failure` passed `37/37` after integration changes
 - GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --size 64M --label full_refresh_20260329`
+- Config: `--iterations 5 --warmup 2 --label full_refresh_20260405`
 - Validation layers: `disabled`
 - GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-03-29T14:12:30Z`
-- Latest collected run: [runs/nvidia_geforce_rtx_2080_super/20260329_141230Z_full_refresh_20260329.json](./runs/nvidia_geforce_rtx_2080_super/20260329_141230Z_full_refresh_20260329.json)
-- Sweep coverage: `1` variant x `15` problem sizes x `8` dispatch counts
+- Raw export timestamp (UTC): `2026-04-05T13:48:46Z`
+- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260405_134846Z_full_refresh_20260405.json)
+- Sweep coverage: `1` variants x current configured problem sizes
 
 ## Key Measurements
-- At the largest tested problem size (`problem_size=16777216`), `dispatch_count=1` measured `0.322528 ms` and `416.143 GB/s`.
-- The peak bandwidth point in the current run was `dispatch_count=16` at `5.057568 ms` and `424.608 GB/s`.
-- Even the heaviest point, `dispatch_count=1024`, still held `416.781 GB/s`, only `1.019x` below the peak.
-- Across the full `dispatch_count=1..1024` sweep at that size, the measured bandwidth stayed within about `2%`, even though total GPU time scaled with the multiplied work.
+- All `1` benchmark cases are represented in the refreshed export.
+- At the largest tested `problem_size=4194304`, the fastest median GPU time came from `variant=sequential_read_write` at `0.084256 ms`. Median GB/s: `398.244`. Median throughput: `49780478541.588`.
 
 ## Artifact Links
 - [Raw benchmark export](./results/tables/benchmark_results.json)
-- [Current summary table](./results/tables/sequential_indexing_summary.csv)
-- [Status overview table](./results/tables/sequential_indexing_status_overview.csv)
-- [GPU time chart](./results/charts/sequential_indexing_gpu_ms_vs_size.png)
-- [GB/s chart](./results/charts/sequential_indexing_gbps_vs_size.png)
+- [sequential indexing multi run summary](./results/tables/sequential_indexing_multi_run_summary.csv)
+- [sequential indexing runs index](./results/tables/sequential_indexing_runs_index.csv)
+- [sequential indexing status overview](./results/tables/sequential_indexing_status_overview.csv)
+- [sequential indexing summary](./results/tables/sequential_indexing_summary.csv)
+- [benchmark summary](./results/charts/benchmark_summary.png)
+- [sequential indexing gbps vs size](./results/charts/sequential_indexing_gbps_vs_size.png)
+- [sequential indexing gpu ms vs size](./results/charts/sequential_indexing_gpu_ms_vs_size.png)
 
 ## Interpretation
-- Once the workload is large and fully sequential, dispatch multiplication changes total time much more than observed bandwidth. The measured bandwidth stays very flat across the sweep in this full-refresh run.
-- That keeps Experiment 04 useful as a control for later experiments that deliberately perturb memory access patterns while keeping the basic dispatch structure recognizable.
+- The fastest and slowest median GPU-time cases in the current focus set are separated by about `98947.74%`, so the sweep does show a large spread on this GPU.
 
 ## Limitations
 - Results come from one GPU and driver stack.
-- This benchmark exercises only the sequential read/write baseline; it does not isolate arithmetic or synchronization overheads separately.
+- Reported GB/s values follow each experiment's own metric definition; compare them within an experiment before comparing them across experiments.
+- The refreshed report covers the current sweep only; different sizes, kernels, drivers, or GPUs may shift the ranking.

@@ -407,7 +407,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& resources, 
 
 void record_case_notes(std::string& notes, ImplementationKind kind, uint32_t radius, uint32_t logical_count,
                        uint32_t group_count_x, bool rounded_to_workgroup_multiple, bool correctness_pass,
-                       bool dispatch_ok) {
+                       bool dispatch_ok, std::size_t scratch_size_bytes) {
     const uint32_t source_padded_elements = compute_source_padded_elements(logical_count);
     const uint32_t active_tile_span_elements = compute_active_tile_span(radius);
     const VkDeviceSize estimated_global_read_bytes =
@@ -425,6 +425,7 @@ void record_case_notes(std::string& notes, ImplementationKind kind, uint32_t rad
     append_note(notes, "active_tile_span_elements=" + std::to_string(active_tile_span_elements));
     append_note(notes, "shared_bytes_per_workgroup=" +
                            std::to_string(static_cast<unsigned long long>(is_tiled ? kSharedBytesPerWorkgroup : 0U)));
+    append_note(notes, "scratch_size_bytes=" + std::to_string(static_cast<unsigned long long>(scratch_size_bytes)));
     append_note(notes, "barriers_per_workgroup=" + std::to_string(is_tiled ? 1U : 0U));
     append_note(notes, "estimated_global_read_bytes=" +
                            std::to_string(static_cast<unsigned long long>(estimated_global_read_bytes)));
@@ -445,7 +446,7 @@ void record_case_notes(std::string& notes, ImplementationKind kind, uint32_t rad
 bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const BufferResources& buffers,
               const PipelineResources& pipeline_resources, ImplementationKind kind, uint32_t radius,
               uint32_t logical_count, bool rounded_to_workgroup_multiple, const std::vector<uint32_t>& reference_values,
-              SharedMemoryTilingExperimentOutput& output, bool verbose_progress) {
+              SharedMemoryTilingExperimentOutput& output, bool verbose_progress, std::size_t scratch_size_bytes) {
     const std::string variant_name = make_variant_name(kind, radius);
     const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(logical_count, kWorkgroupSize);
     const uint32_t source_padded_elements = compute_source_padded_elements(logical_count);
@@ -510,7 +511,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
 
         std::string notes;
         record_case_notes(notes, kind, radius, logical_count, group_count_x, rounded_to_workgroup_multiple,
-                          correctness_pass, dispatch_ok);
+                          correctness_pass, dispatch_ok, scratch_size_bytes);
 
         if (verbose_progress) {
             std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/" << runner.timed_iterations()
@@ -594,7 +595,8 @@ run_shared_memory_tiling_experiment(VulkanContext& context, const BenchmarkRunne
         std::cout << "[" << kExperimentId << "] Tiled shader: " << shader_paths[1] << "\n";
         std::cout << "[" << kExperimentId << "] logical_outputs=" << logical_count
                   << ", source_span_bytes=" << source_span_bytes << ", output_span_bytes=" << output_span_bytes
-                  << ", scratch_size_bytes=" << config.max_buffer_bytes << ", rounded_to_workgroup_multiple="
+                  << ", scratch_size_bytes=" << config.scratch_size_bytes
+                  << ", per_buffer_budget_bytes=" << config.max_buffer_bytes << ", rounded_to_workgroup_multiple="
                   << (count_resolution.rounded_to_workgroup_multiple ? "true" : "false")
                   << ", warmup_iterations=" << runner.warmup_iterations()
                   << ", timed_iterations=" << runner.timed_iterations() << "\n";
@@ -637,7 +639,7 @@ run_shared_memory_tiling_experiment(VulkanContext& context, const BenchmarkRunne
             const auto& descriptor = kImplementationDescriptors[index];
             if (!run_case(context, runner, buffers, pipeline_resources[index], descriptor.kind, radius, logical_count,
                           count_resolution.rounded_to_workgroup_multiple, reference_values, output,
-                          config.verbose_progress)) {
+                          config.verbose_progress, config.scratch_size_bytes)) {
                 output.all_points_correct = false;
             }
         }

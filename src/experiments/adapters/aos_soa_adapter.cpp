@@ -1,6 +1,7 @@
 #include "experiments/aos_soa_experiment.hpp"
 #include "experiments/experiment_contract.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -9,7 +10,8 @@ bool run_aos_soa_experiment_adapter(VulkanContext& context, const BenchmarkRunne
                                     ExperimentRunOutput& output) {
     AosSoaExperimentOutput experiment_output = run_aos_soa_experiment(
         context, runner,
-        AosSoaExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
+        AosSoaExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(
+                                   ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 2U)),
                                .aos_shader_path = "",
                                .soa_shader_path = "",
                                .verbose_progress = options.verbose_progress});

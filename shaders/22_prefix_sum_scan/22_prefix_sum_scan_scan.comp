@@ -1,0 +1,79 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(binding = 0, std430) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(binding = 1, std430) writeonly buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(binding = 2, std430) writeonly buffer BlockTotalsBuffer {
+    uint values[];
+} block_totals_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint block_elements;
+    uint block_count;
+    uint items_per_thread;
+} push_constants;
+
+shared uint scan_ping[2048];
+shared uint scan_pong[2048];
+
+void main() {
+    const uint local_index = gl_LocalInvocationID.x;
+    const uint block_index = gl_WorkGroupID.x;
+    const uint base_element = block_index * push_constants.block_elements;
+    const uint remaining = push_constants.element_count - base_element;
+    const uint block_size = min(push_constants.block_elements, remaining);
+    const uint stride = gl_WorkGroupSize.x;
+
+    for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
+        const uint shared_index = local_index + (item * stride);
+        uint value = 0U;
+        if (shared_index < block_size) {
+            value = input_buffer.values[base_element + shared_index];
+        }
+        scan_ping[shared_index] = value;
+        scan_pong[shared_index] = 0U;
+    }
+
+    barrier();
+
+    bool read_ping = true;
+    for (uint offset = 1U; offset < push_constants.block_elements; offset <<= 1U) {
+        for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
+            const uint shared_index = local_index + (item * stride);
+            if (shared_index < block_size) {
+                const uint current = read_ping ? scan_ping[shared_index] : scan_pong[shared_index];
+                const uint addend =
+                    (shared_index >= offset) ? (read_ping ? scan_ping[shared_index - offset]
+                                                         : scan_pong[shared_index - offset])
+                                             : 0U;
+                if (read_ping) {
+                    scan_pong[shared_index] = current + addend;
+                } else {
+                    scan_ping[shared_index] = current + addend;
+                }
+            }
+        }
+
+        barrier();
+        read_ping = !read_ping;
+    }
+
+    for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
+        const uint shared_index = local_index + (item * stride);
+        if (shared_index < block_size) {
+            const uint result = read_ping ? scan_ping[shared_index] : scan_pong[shared_index];
+            output_buffer.values[base_element + shared_index] = result;
+            if (shared_index == (block_size - 1U)) {
+                block_totals_buffer.values[block_index] = result;
+            }
+        }
+    }
+}

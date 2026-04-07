@@ -451,7 +451,9 @@ void record_case_run(std::string& notes, const std::string& variant_name,
     append_note(notes,
                 "total_allocation_bytes=" + std::to_string(static_cast<unsigned long long>(total_allocation_bytes)));
     append_note(notes,
-                "scratch_size_bytes=" + std::to_string(static_cast<unsigned long long>(config.max_buffer_bytes)));
+                "scratch_size_bytes=" + std::to_string(static_cast<unsigned long long>(config.scratch_size_bytes)));
+    append_note(notes,
+                "per_buffer_budget_bytes=" + std::to_string(static_cast<unsigned long long>(config.max_buffer_bytes)));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "group_count_x=" + std::to_string(group_count_x));
     append_note(notes, "dispatch_count=" + std::to_string(kDispatchCount));
@@ -522,6 +524,8 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         std::cout << "[" << kExperimentId << "] Case start: variant=" << variant_name
                   << ", logical_elements=" << logical_count << ", source_unique_elements=" << source_count
                   << ", source_span_bytes=" << source_span_bytes << ", index_span_bytes=" << logical_span_bytes
+                  << ", scratch_size_bytes=" << config.scratch_size_bytes
+                  << ", per_buffer_budget_bytes=" << config.max_buffer_bytes
                   << ", pair_block_size=" << case_reference.pair_block_size
                   << ", warmup_iterations=" << runner.warmup_iterations()
                   << ", timed_iterations=" << runner.timed_iterations() << "\n";
@@ -642,7 +646,8 @@ run_read_reuse_cache_locality_experiment(VulkanContext& context, const Benchmark
                   << ", source_unique_elements=" << source_count
                   << ", source_span_bytes=" << compute_source_span_bytes(source_count)
                   << ", logical_span_bytes=" << compute_logical_span_bytes(logical_count)
-                  << ", scratch_size_bytes=" << config.max_buffer_bytes
+                  << ", per_buffer_budget_bytes=" << config.max_buffer_bytes
+                  << ", scratch_size_bytes=" << config.scratch_size_bytes
                   << ", logical_count_adjusted_to_even=" << (logical_count_adjusted_to_even ? "true" : "false")
                   << ", warmup_iterations=" << runner.warmup_iterations()
                   << ", timed_iterations=" << runner.timed_iterations() << "\n";

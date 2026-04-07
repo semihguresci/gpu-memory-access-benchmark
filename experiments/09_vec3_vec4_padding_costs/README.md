@@ -1,15 +1,17 @@
-# Experiment 09: vec3, vec4, and Padding Costs
+﻿# Experiment 09: vec3 vs vec4 Padding Costs
 
-## Overview
-This folder contains experiment-local planning artifacts and implementation scaffolding.
+## Folder Role
+This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
-## Files
-- `experiment_plan.md`: experiment lecture-note plan used as the canonical technical spec.
-- `development_plan.md`: development sequencing and status tracking.
-- `implementation_plan.md`: implementation work package checklist.
-- `architecture.md`: runtime architecture and measurement contract.
-- `results.md`: latest test/run report with measured values and limitations.
-- `scripts/`: experiment-local helper scripts (run collection).
+## Canonical Documents
+- [Experiment plan](../../docs/experiment_plans/09_vec3_vec4_padding_costs.md)
+- [Results report](results.md)
 
-## Canonical Source
-- ../../docs/experiment_plans/09_vec3_vec4_padding_costs.md
+## Local Contents
+- `results.md`: current measured conclusions and artifact links
+- `results/`: generated tables and charts
+- `runs/`: archived raw benchmark exports
+- `scripts/`: experiment-local collection and analysis helpers
+- [scripts/README.md](scripts/README.md): local script usage notes
+
+Repo-wide architecture, development planning, and implementation sequencing live under `../../docs/`.

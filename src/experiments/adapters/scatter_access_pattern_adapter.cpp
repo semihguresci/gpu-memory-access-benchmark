@@ -1,6 +1,7 @@
 #include "experiments/experiment_contract.hpp"
 #include "experiments/scatter_access_pattern_experiment.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -10,7 +11,8 @@ bool run_scatter_access_pattern_experiment_adapter(VulkanContext& context, const
     ScatterAccessPatternExperimentOutput experiment_output = run_scatter_access_pattern_experiment(
         context, runner,
         ScatterAccessPatternExperimentConfig{
-            .max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 2U)),
             .shader_path = "",
             .verbose_progress = options.verbose_progress,
         });

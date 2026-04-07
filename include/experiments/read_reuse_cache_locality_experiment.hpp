@@ -10,6 +10,7 @@ class VulkanContext;
 
 struct ReadReuseCacheLocalityExperimentConfig {
     std::size_t max_buffer_bytes = 0;
+    std::size_t scratch_size_bytes = 0;
     std::string shader_path;
     bool verbose_progress = false;
 };

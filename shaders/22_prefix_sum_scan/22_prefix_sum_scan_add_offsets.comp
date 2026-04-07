@@ -1,0 +1,36 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(binding = 0, std430) readonly buffer BlockPrefixBuffer {
+    uint values[];
+} block_prefix_buffer;
+
+layout(binding = 1, std430) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint block_elements;
+    uint block_count;
+    uint items_per_thread;
+} push_constants;
+
+void main() {
+    const uint local_index = gl_LocalInvocationID.x;
+    const uint block_index = gl_WorkGroupID.x;
+    const uint base_element = block_index * push_constants.block_elements;
+    const uint remaining = push_constants.element_count - base_element;
+    const uint block_size = min(push_constants.block_elements, remaining);
+    const uint stride = gl_WorkGroupSize.x;
+    const uint block_offset = (block_index == 0U) ? 0U : block_prefix_buffer.values[block_index - 1U];
+
+    for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
+        const uint shared_index = local_index + (item * stride);
+        if (shared_index < block_size) {
+            const uint global_index = base_element + shared_index;
+            output_buffer.values[global_index] += block_offset;
+        }
+    }
+}

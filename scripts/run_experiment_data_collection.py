@@ -7,111 +7,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+from experiment_manifest import ROOT, load_experiment_manifest
 
-ROOT = Path(__file__).resolve().parent.parent
+
 EXPERIMENT_CONFIG = {
-    "01_dispatch_basics": {
-        "output": ROOT / "experiments" / "01_dispatch_basics" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "01_dispatch_basics" / "scripts" / "collect_run.py",
-        "default_size": "4M",
-    },
-    "02_local_size_sweep": {
-        "output": ROOT / "experiments" / "02_local_size_sweep" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "02_local_size_sweep" / "scripts" / "collect_run.py",
-        "default_size": "32M",
-    },
-    "03_memory_copy_baseline": {
-        "output": ROOT / "experiments" / "03_memory_copy_baseline" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "03_memory_copy_baseline" / "scripts" / "collect_run.py",
-        "default_size": "64M",
-    },
-    "04_sequential_indexing": {
-        "output": ROOT / "experiments" / "04_sequential_indexing" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "04_sequential_indexing" / "scripts" / "collect_run.py",
-        "default_size": "64M",
-    },
-    "05_global_id_mapping_variants": {
-        "output": ROOT
-        / "experiments"
-        / "05_global_id_mapping_variants"
-        / "results"
-        / "tables"
-        / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "05_global_id_mapping_variants" / "scripts" / "collect_run.py",
-        "default_size": "64M",
-    },
-    "06_aos_vs_soa": {
-        "output": ROOT / "experiments" / "06_aos_vs_soa" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "06_aos_vs_soa" / "scripts" / "collect_run.py",
-        "default_size": "64M",
-    },
-    "07_aosoa_blocked_layout": {
-        "output": ROOT / "experiments" / "07_aosoa_blocked_layout" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "07_aosoa_blocked_layout" / "scripts" / "collect_run.py",
-        "default_size": "512M",
-    },
-    "08_std430_std140_packed": {
-        "output": ROOT / "experiments" / "08_std430_std140_packed" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "08_std430_std140_packed" / "scripts" / "collect_run.py",
-        "default_size": "128M",
-    },
-    "09_vec3_vec4_padding_costs": {
-        "output": ROOT / "experiments" / "09_vec3_vec4_padding_costs" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "09_vec3_vec4_padding_costs" / "scripts" / "collect_run.py",
-        "default_size": "128M",
-    },
-    "10_scalar_type_width_sweep": {
-        "output": ROOT / "experiments" / "10_scalar_type_width_sweep" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "10_scalar_type_width_sweep" / "scripts" / "collect_run.py",
-        "default_size": "128M",
-    },
-    "11_coalesced_vs_strided": {
-        "output": ROOT / "experiments" / "11_coalesced_vs_strided" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "11_coalesced_vs_strided" / "scripts" / "collect_run.py",
-        "default_size": "128M",
-    },
-    "12_gather_access_pattern": {
-        "output": ROOT / "experiments" / "12_gather_access_pattern" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "12_gather_access_pattern" / "scripts" / "collect_run.py",
-        "default_size": "32M",
-    },
-    "13_scatter_access_pattern": {
-        "output": ROOT / "experiments" / "13_scatter_access_pattern" / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "13_scatter_access_pattern" / "scripts" / "collect_run.py",
-        "default_size": "32M",
-    },
-    "14_read_reuse_cache_locality": {
-        "output": ROOT
-        / "experiments"
-        / "14_read_reuse_cache_locality"
-        / "results"
-        / "tables"
-        / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "14_read_reuse_cache_locality" / "scripts" / "collect_run.py",
-        "default_size": "32M",
-    },
-    "15_bandwidth_saturation_sweep": {
-        "output": ROOT
-        / "experiments"
-        / "15_bandwidth_saturation_sweep"
-        / "results"
-        / "tables"
-        / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "15_bandwidth_saturation_sweep" / "scripts" / "collect_run.py",
-        "default_size": "512M",
-    },
-    "16_shared_memory_tiling": {
-        "output": ROOT
-        / "experiments"
-        / "16_shared_memory_tiling"
-        / "results"
-        / "tables"
-        / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / "16_shared_memory_tiling" / "scripts" / "collect_run.py",
-        "default_size": "32M",
-    },
+    str(experiment["id"]): {
+        "output": ROOT / "experiments" / str(experiment["id"]) / "results" / "tables" / "benchmark_results.json",
+        "collect_script": ROOT / "experiments" / str(experiment["id"]) / "scripts" / "collect_run.py",
+        "default_size": str(experiment["default_size"]),
+    }
+    for experiment in load_experiment_manifest()
+    if bool(experiment["enabled"])
 }
-EXPERIMENT_IDS = tuple(EXPERIMENT_CONFIG.keys())
+EXPERIMENT_IDS = tuple(EXPERIMENT_CONFIG)
 
 
 def _resolve_binary(explicit_path: str | None) -> Path:
@@ -212,7 +120,7 @@ def main() -> None:
         config = EXPERIMENT_CONFIG[experiment_id]
         output_path: Path = config["output"]
         collect_script: Path = config["collect_script"]
-        selected_size: str = args.size if args.size is not None else str(config.get("default_size", "4M"))
+        selected_size: str = args.size if args.size is not None else str(config["default_size"])
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         print(f"[info] Experiment {experiment_id} (size={selected_size})", flush=True)

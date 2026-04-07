@@ -25,4 +25,3 @@ struct Vec3Vec4PaddingCostsExperimentOutput {
 Vec3Vec4PaddingCostsExperimentOutput
 run_vec3_vec4_padding_costs_experiment(VulkanContext& context, const BenchmarkRunner& runner,
                                        const Vec3Vec4PaddingCostsExperimentConfig& config);
-

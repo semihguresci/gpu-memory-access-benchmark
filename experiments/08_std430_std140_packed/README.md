@@ -1,15 +1,17 @@
-# Experiment 08: std430 vs std140 vs Packed
+﻿# Experiment 08: std430 vs std140 vs Packed
 
-## Overview
-This folder contains experiment-local planning artifacts and implementation scaffolding.
+## Folder Role
+This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
-## Files
-- `experiment_plan.md`: experiment lecture-note plan used as the canonical technical spec.
-- `development_plan.md`: development sequencing notes for this experiment.
-- `implementation_plan.md`: concrete implementation task checklist for this experiment.
-- `architecture.md`: runtime/dataflow architecture snapshot for this experiment.
-- `results.md`: concise run report and interpretation.
-- `scripts/`: collection and analysis tooling for experiment-local outputs.
+## Canonical Documents
+- [Experiment plan](../../docs/experiment_plans/08_std430_std140_packed.md)
+- [Results report](results.md)
 
-## Canonical Source
-- ../../docs/experiment_plans/08_std430_std140_packed.md
+## Local Contents
+- `results.md`: current measured conclusions and artifact links
+- `results/`: generated tables and charts
+- `runs/`: archived raw benchmark exports
+- `scripts/`: experiment-local collection and analysis helpers
+- [scripts/README.md](scripts/README.md): local script usage notes
+
+Repo-wide architecture, development planning, and implementation sequencing live under `../../docs/`.

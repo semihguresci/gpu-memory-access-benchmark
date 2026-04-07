@@ -1,0 +1,28 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint logical_count;
+} push_constants;
+
+uint transform_value(uint input_value, uint index_value) {
+    return ((input_value ^ (index_value * 1664525u)) + 1013904223u);
+}
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    if (index >= push_constants.logical_count) {
+        return;
+    }
+
+    output_buffer.values[index] = transform_value(input_buffer.values[index], index);
+}

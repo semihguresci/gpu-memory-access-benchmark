@@ -1,0 +1,33 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) readonly buffer SourceBuffer {
+    uint values[];
+} src_buffer;
+
+layout(set = 0, binding = 1) readonly buffer PermutationBuffer {
+    uint indices[];
+} permutation_buffer;
+
+layout(set = 0, binding = 2) writeonly buffer DestinationBuffer {
+    uint values[];
+} dst_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+} push_constants;
+
+uint transform_value(uint input_value, uint source_index) {
+    return (input_value ^ (source_index * 1664525u)) + 1013904223u;
+}
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    if (index >= push_constants.element_count) {
+        return;
+    }
+
+    const uint source_index = permutation_buffer.indices[index];
+    dst_buffer.values[index] = transform_value(src_buffer.values[source_index], source_index);
+}

@@ -1,6 +1,7 @@
 #include "experiments/experiment_contract.hpp"
 #include "experiments/vec3_vec4_padding_costs_experiment.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -10,7 +11,8 @@ bool run_vec3_vec4_padding_costs_experiment_adapter(VulkanContext& context, cons
     Vec3Vec4PaddingCostsExperimentOutput experiment_output = run_vec3_vec4_padding_costs_experiment(
         context, runner,
         Vec3Vec4PaddingCostsExperimentConfig{
-            .max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_scaled_budget(options.scratch_size_bytes, 16U, 39U)),
             .vec3_shader_path = "",
             .vec4_shader_path = "",
             .split_scalars_shader_path = "",
@@ -34,4 +36,3 @@ bool run_vec3_vec4_padding_costs_experiment_adapter(VulkanContext& context, cons
 
     return true;
 }
-

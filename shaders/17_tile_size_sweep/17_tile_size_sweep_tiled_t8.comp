@@ -1,0 +1,45 @@
+#version 450
+
+#define TILE_SIZE 8
+#define TILE_SPAN 40
+
+layout(local_size_x = TILE_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+shared uint shared_tile[TILE_SPAN];
+
+layout(set = 0, binding = 0) readonly buffer SourceBuffer {
+    uint source_values[];
+} src_buffer;
+
+layout(set = 0, binding = 1) writeonly buffer DestinationBuffer {
+    uint destination_values[];
+} dst_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint output_count;
+    uint radius;
+    uint center_offset;
+} pc;
+
+void main() {
+    const uint local_index = gl_LocalInvocationID.x;
+    const uint group_base = gl_WorkGroupID.x * uint(TILE_SIZE);
+
+    for (uint shared_index = local_index; shared_index < uint(TILE_SPAN); shared_index += uint(TILE_SIZE)) {
+        shared_tile[shared_index] = src_buffer.source_values[group_base + shared_index];
+    }
+
+    barrier();
+
+    const uint global_index = group_base + local_index;
+    if (global_index >= pc.output_count) {
+        return;
+    }
+
+    uint sum = 0u;
+    for (uint offset = 0u; offset < ((pc.radius * 2u) + 1u); ++offset) {
+        sum += shared_tile[local_index + offset];
+    }
+
+    dst_buffer.destination_values[global_index] = sum;
+}

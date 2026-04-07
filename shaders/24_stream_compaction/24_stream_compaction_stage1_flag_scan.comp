@@ -1,0 +1,65 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 2) buffer LocalPrefixBuffer {
+    uint values[];
+} local_prefix_buffer;
+
+layout(std430, binding = 3) buffer BlockCountsBuffer {
+    uint values[];
+} block_counts_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint block_count;
+    uint valid_ratio_percent;
+    uint pattern_seed;
+} push_constants;
+
+shared uint shared_flags[256];
+
+const uint kHashMul0 = 0x7feb352du;
+const uint kHashMul1 = 0x846ca68bu;
+
+uint hash_index(uint index_value) {
+    uint value = index_value ^ push_constants.pattern_seed;
+    value ^= value >> 16u;
+    value *= kHashMul0;
+    value ^= value >> 15u;
+    value *= kHashMul1;
+    value ^= value >> 16u;
+    return value;
+}
+
+bool is_index_valid(uint index_value) {
+    return (hash_index(index_value) % 100u) < push_constants.valid_ratio_percent;
+}
+
+void main() {
+    const uint index_value = gl_GlobalInvocationID.x;
+    const uint local_index = gl_LocalInvocationID.x;
+    const bool in_bounds = index_value < push_constants.element_count;
+    const uint flag_value = (in_bounds && is_index_valid(index_value)) ? 1u : 0u;
+
+    shared_flags[local_index] = flag_value;
+    barrier();
+
+    for (uint offset = 1u; offset < 256u; offset <<= 1u) {
+        uint addend = 0u;
+        if (local_index >= offset) {
+            addend = shared_flags[local_index - offset];
+        }
+        barrier();
+        shared_flags[local_index] += addend;
+        barrier();
+    }
+
+    if (in_bounds) {
+        local_prefix_buffer.values[index_value] = shared_flags[local_index] - flag_value;
+    }
+
+    if (local_index == 255u) {
+        block_counts_buffer.values[gl_WorkGroupID.x] = shared_flags[255];
+    }
+}

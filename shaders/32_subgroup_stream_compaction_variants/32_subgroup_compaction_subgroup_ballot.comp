@@ -1,0 +1,77 @@
+#version 450
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(std430, binding = 2) buffer BlockCountsBuffer {
+    uint values[];
+} block_counts_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint logical_count;
+    uint valid_ratio_percent;
+    uint pattern_seed;
+} push_constants;
+
+shared uint subgroup_counts[32];
+shared uint subgroup_offsets[32];
+
+const uint kHashMul0 = 0x7feb352du;
+const uint kHashMul1 = 0x846ca68bu;
+
+uint hash_index(uint index_value) {
+    uint value = index_value ^ push_constants.pattern_seed;
+    value ^= value >> 16u;
+    value *= kHashMul0;
+    value ^= value >> 15u;
+    value *= kHashMul1;
+    value ^= value >> 16u;
+    return value;
+}
+
+bool is_index_valid(uint index_value) {
+    return (hash_index(index_value) % 100u) < push_constants.valid_ratio_percent;
+}
+
+void main() {
+    const uint global_index = gl_GlobalInvocationID.x;
+    const uint local_index = gl_LocalInvocationID.x;
+    const uint subgroup_index = gl_SubgroupID;
+    const uint subgroup_count = gl_WorkGroupSize.x / gl_SubgroupSize;
+    const uint block_base = gl_WorkGroupID.x * gl_WorkGroupSize.x;
+
+    const bool valid = global_index < push_constants.logical_count && is_index_valid(global_index);
+    const uvec4 ballot = subgroupBallot(valid);
+    const uint subgroup_rank = subgroupBallotExclusiveBitCount(ballot);
+    const uint subgroup_valid_count = subgroupBallotBitCount(ballot);
+
+    if (subgroupElect()) {
+        subgroup_counts[subgroup_index] = subgroup_valid_count;
+    }
+    barrier();
+
+    if (local_index == 0u) {
+        uint running_sum = 0u;
+        for (uint subgroup_iter = 0u; subgroup_iter < subgroup_count; ++subgroup_iter) {
+            subgroup_offsets[subgroup_iter] = running_sum;
+            running_sum += subgroup_counts[subgroup_iter];
+        }
+        block_counts_buffer.values[gl_WorkGroupID.x] = running_sum;
+    }
+    barrier();
+
+    if (valid) {
+        const uint compact_index = subgroup_offsets[subgroup_index] + subgroup_rank;
+        output_buffer.values[block_base + compact_index] = input_buffer.values[global_index];
+    }
+}

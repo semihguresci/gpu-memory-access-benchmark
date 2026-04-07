@@ -1,0 +1,76 @@
+#version 460
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) readonly buffer SourceBuffer {
+    uint src_values[];
+};
+
+layout(set = 0, binding = 1) writeonly buffer DestinationBuffer {
+    uint dst_values[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint logical_count;
+    uint barrier_interval_phases;
+    uint total_phases;
+    uint seed_salt;
+} pc;
+
+shared uint shared_seed;
+
+uint rotl32(uint value, uint shift) {
+    uint effective_shift = shift & 31u;
+    return (value << effective_shift) | (value >> ((32u - effective_shift) & 31u));
+}
+
+uint mix_value(uint value, uint phase_index, uint local_id, uint group_id, uint tile_index) {
+    uint phase_salt = 0x9E3779B9u * (phase_index + 1u);
+    uint local_salt = 0x85EBCA6Bu * (local_id + 1u);
+    uint group_salt = 0xC2B2AE35u * (group_id + 1u);
+    uint tile_salt = 0x27D4EB2Du * (tile_index + 1u);
+    value ^= phase_salt + local_salt;
+    value += group_salt ^ tile_salt;
+    value = rotl32(value, (phase_index % 13u) + 5u);
+    value ^= value >> 11u;
+    value *= 0x7FEB352Du;
+    value ^= value >> 15u;
+    return value;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= pc.logical_count) {
+        return;
+    }
+
+    uint local_id = gl_LocalInvocationID.x;
+    uint group_id = gl_WorkGroupID.x;
+    uint value = src_values[index];
+
+    if (pc.barrier_interval_phases == 0u) {
+        for (uint phase_index = 0u; phase_index < pc.total_phases; ++phase_index) {
+            value = mix_value(value, phase_index, local_id, group_id, 0u);
+        }
+        dst_values[index] = value;
+        return;
+    }
+
+    uint tile_phase_count = pc.barrier_interval_phases;
+    uint tile_count = pc.total_phases / tile_phase_count;
+    uint phase_index = 0u;
+    for (uint tile_index = 0u; tile_index < tile_count; ++tile_index) {
+        for (uint tile_phase = 0u; tile_phase < tile_phase_count; ++tile_phase) {
+            value = mix_value(value, phase_index, local_id, group_id, tile_index);
+            ++phase_index;
+        }
+
+        if (local_id == 0u) {
+            shared_seed = value ^ (pc.seed_salt + (group_id * 0x9E3779B9u) + (tile_index * 0x85EBCA6Bu));
+        }
+        barrier();
+        value ^= shared_seed + local_id + group_id + phase_index;
+    }
+
+    dst_values[index] = value;
+}

@@ -1,0 +1,4 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#define TEMP_COUNT 32
+#include "18_register_pressure_proxy_common.glsl"

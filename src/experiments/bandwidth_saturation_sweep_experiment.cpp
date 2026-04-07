@@ -27,6 +27,8 @@ constexpr std::array<uint32_t, 17> kSweepSizesMiB = {
 };
 constexpr float kWriteOnlySentinel = -12345.0F;
 constexpr float kCopyDestinationSentinel = -23456.0F;
+constexpr float kReadOnlyProbeSentinel = -34567.0F;
+constexpr uint32_t kReadOnlyProbeCount = 4U;
 
 enum class MemoryMode : std::uint8_t {
     kReadOnly = 0U,
@@ -116,6 +118,40 @@ bool validate_write_pattern(const float* values, uint32_t element_count) {
     return true;
 }
 
+uint32_t read_only_probe_source_index(uint32_t probe_slot, uint32_t element_count) {
+    switch (probe_slot) {
+    case 0U:
+        return 0U;
+    case 1U:
+        return element_count / 3U;
+    case 2U:
+        return (element_count * 2U) / 3U;
+    case 3U:
+        return element_count - 1U;
+    default:
+        return 0U;
+    }
+}
+
+void fill_read_only_probe_sentinel(float* values) {
+    std::fill_n(values, kReadOnlyProbeCount, kReadOnlyProbeSentinel);
+}
+
+bool validate_read_only_probe(const float* values, uint32_t element_count) {
+    if (element_count == 0U) {
+        return false;
+    }
+
+    for (uint32_t probe_slot = 0U; probe_slot < kReadOnlyProbeCount; ++probe_slot) {
+        const uint32_t source_index = read_only_probe_source_index(probe_slot, element_count);
+        if (values[probe_slot] != source_pattern_value(source_index)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 double compute_effective_gbps(uint32_t problem_size, uint32_t bytes_per_element, double dispatch_gpu_ms) {
     if (!std::isfinite(dispatch_gpu_ms) || dispatch_gpu_ms <= 0.0) {
         return 0.0;
@@ -190,7 +226,8 @@ bool create_experiment_buffer_resources(VulkanContext& context, VkDeviceSize max
 }
 
 bool create_read_only_pipeline_resources(VulkanContext& context, const std::string& shader_path,
-                                         const BufferResource& src_device, VariantPipelineResources& out_resources) {
+                                         const BufferResource& src_device, const BufferResource& probe_device,
+                                         VariantPipelineResources& out_resources) {
     if (!VulkanComputeUtils::load_shader_module_from_file(context.device(), shader_path, out_resources.shader_module)) {
         std::cerr << "Failed to load read-only shader module: " << shader_path << "\n";
         return false;
@@ -198,6 +235,7 @@ bool create_read_only_pipeline_resources(VulkanContext& context, const std::stri
 
     const std::vector<VkDescriptorSetLayoutBinding> bindings = {
         VkDescriptorSetLayoutBinding{0U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1U, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{1U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1U, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
     };
     if (!VulkanComputeUtils::create_descriptor_set_layout(context.device(), bindings,
                                                           out_resources.descriptor_set_layout)) {
@@ -206,7 +244,7 @@ bool create_read_only_pipeline_resources(VulkanContext& context, const std::stri
     }
 
     const std::vector<VkDescriptorPoolSize> pool_sizes = {
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1U},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2U},
     };
     if (!VulkanComputeUtils::create_descriptor_pool(context.device(), pool_sizes, 1U, out_resources.descriptor_pool)) {
         std::cerr << "Failed to create read-only descriptor pool.\n";
@@ -221,10 +259,15 @@ bool create_read_only_pipeline_resources(VulkanContext& context, const std::stri
     }
 
     const VkDescriptorBufferInfo src_info{src_device.buffer, 0U, src_device.size};
+    const VkDescriptorBufferInfo probe_info{probe_device.buffer, 0U, probe_device.size};
     VulkanComputeUtils::update_descriptor_set_buffers(
         context.device(), out_resources.descriptor_set,
-        {VulkanComputeUtils::DescriptorBufferBindingUpdate{
-            .binding = 0U, .descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .buffer_info = src_info}});
+        {
+            VulkanComputeUtils::DescriptorBufferBindingUpdate{
+                .binding = 0U, .descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .buffer_info = src_info},
+            VulkanComputeUtils::DescriptorBufferBindingUpdate{
+                .binding = 1U, .descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .buffer_info = probe_info},
+        });
 
     const std::vector<VkPushConstantRange> push_constant_ranges = {
         VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0U, sizeof(uint32_t)},
@@ -380,6 +423,7 @@ double run_readback_stage(VulkanContext& context, const BufferResource& src_buff
 }
 
 double run_read_only_dispatch_stage(VulkanContext& context, const VariantPipelineResources& resources,
+                                    const BufferResource& probe_buffer, VkDeviceSize probe_bytes,
                                     uint32_t group_count_x, uint32_t element_count) {
     return context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, resources.pipeline);
@@ -388,6 +432,8 @@ double run_read_only_dispatch_stage(VulkanContext& context, const VariantPipelin
         vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            sizeof(element_count), &element_count);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_transfer_read_barrier(command_buffer, probe_buffer.buffer,
+                                                                          probe_bytes);
     });
 }
 
@@ -529,7 +575,8 @@ run_bandwidth_saturation_sweep_experiment(VulkanContext& context, const Benchmar
     }
 
     VariantPipelineResources read_only_resources{};
-    if (!create_read_only_pipeline_resources(context, read_only_shader_path, buffers.src_device, read_only_resources)) {
+    if (!create_read_only_pipeline_resources(context, read_only_shader_path, buffers.src_device, buffers.dst_device,
+                                             read_only_resources)) {
         destroy_variant_pipeline_resources(context, read_only_resources);
         destroy_experiment_buffer_resources(context, buffers);
         return output;
@@ -574,6 +621,7 @@ run_bandwidth_saturation_sweep_experiment(VulkanContext& context, const Benchmar
 
     for (const uint32_t problem_size : problem_sizes) {
         const VkDeviceSize bytes = static_cast<VkDeviceSize>(problem_size) * sizeof(float);
+        const VkDeviceSize probe_bytes = static_cast<VkDeviceSize>(kReadOnlyProbeCount) * sizeof(float);
         const auto size_mib = static_cast<uint32_t>(bytes / kBytesPerMiB);
         const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(problem_size, kLocalSizeX);
 
@@ -591,22 +639,28 @@ run_bandwidth_saturation_sweep_experiment(VulkanContext& context, const Benchmar
                 if (mode_descriptor.mode == MemoryMode::kReadOnly) {
                     fill_source_pattern(staging_values, problem_size);
                     const double upload_ms = run_upload_stage(context, buffers.staging, buffers.src_device, bytes);
-                    const double dispatch_ms =
-                        run_read_only_dispatch_stage(context, read_only_resources, group_count_x, problem_size);
-                    const double readback_ms = run_readback_stage(context, buffers.src_device, buffers.staging, bytes);
+                    fill_read_only_probe_sentinel(staging_values);
+                    const double upload_probe_ms =
+                        run_upload_stage(context, buffers.staging, buffers.dst_device, probe_bytes);
+                    const double dispatch_ms = run_read_only_dispatch_stage(
+                        context, read_only_resources, buffers.dst_device, probe_bytes, group_count_x, problem_size);
+                    const double readback_ms =
+                        run_readback_stage(context, buffers.dst_device, buffers.staging, probe_bytes);
+                    const bool probe_ok = validate_read_only_probe(staging_values, problem_size);
 
-                    if (!std::isfinite(upload_ms) || !std::isfinite(dispatch_ms) || !std::isfinite(readback_ms)) {
+                    if (!std::isfinite(upload_ms) || !std::isfinite(upload_probe_ms) || !std::isfinite(dispatch_ms) ||
+                        !std::isfinite(readback_ms) || !probe_ok) {
                         std::cerr << "Warmup produced non-finite timing value in read-only mode.\n";
                     }
 
                     if (verbose_progress) {
-                        const bool warmup_ok =
-                            std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+                        const bool warmup_ok = std::isfinite(upload_ms) && std::isfinite(upload_probe_ms) &&
+                                               std::isfinite(dispatch_ms) && std::isfinite(readback_ms) && probe_ok;
                         std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
                                   << runner.warmup_iterations() << " variant=" << mode_descriptor.variant_name
                                   << ", problem_size=" << problem_size << ", size_mib=" << size_mib
-                                  << ", upload_ms=" << upload_ms << ", dispatch_ms=" << dispatch_ms
-                                  << ", readback_ms=" << readback_ms
+                                  << ", upload_ms=" << upload_ms << ", upload_probe_ms=" << upload_probe_ms
+                                  << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
                                   << ", correctness=" << (warmup_ok ? "pass" : "fail") << "\n";
                     }
                 } else if (mode_descriptor.mode == MemoryMode::kWriteOnly) {
@@ -668,9 +722,11 @@ run_bandwidth_saturation_sweep_experiment(VulkanContext& context, const Benchmar
                 if (mode_descriptor.mode == MemoryMode::kReadOnly) {
                     fill_source_pattern(staging_values, problem_size);
                     upload_ms = run_upload_stage(context, buffers.staging, buffers.src_device, bytes);
-                    dispatch_ms =
-                        run_read_only_dispatch_stage(context, read_only_resources, group_count_x, problem_size);
-                    readback_ms = run_readback_stage(context, buffers.src_device, buffers.staging, bytes);
+                    fill_read_only_probe_sentinel(staging_values);
+                    upload_dst_ms = run_upload_stage(context, buffers.staging, buffers.dst_device, probe_bytes);
+                    dispatch_ms = run_read_only_dispatch_stage(context, read_only_resources, buffers.dst_device,
+                                                               probe_bytes, group_count_x, problem_size);
+                    readback_ms = run_readback_stage(context, buffers.dst_device, buffers.staging, probe_bytes);
                 } else if (mode_descriptor.mode == MemoryMode::kWriteOnly) {
                     fill_sentinel(staging_values, problem_size, kWriteOnlySentinel);
                     upload_ms = run_upload_stage(context, buffers.staging, buffers.dst_device, bytes);
@@ -692,13 +748,15 @@ run_bandwidth_saturation_sweep_experiment(VulkanContext& context, const Benchmar
 
                 const bool upload_ok = std::isfinite(upload_ms);
                 const bool upload_dst_ok =
-                    std::isfinite(upload_dst_ms) || mode_descriptor.mode != MemoryMode::kReadWriteCopy;
+                    std::isfinite(upload_dst_ms) || (mode_descriptor.mode == MemoryMode::kWriteOnly);
                 const bool dispatch_ok = std::isfinite(dispatch_ms);
                 const bool readback_ok = std::isfinite(readback_ms);
 
                 bool data_ok = false;
                 switch (mode_descriptor.mode) {
                 case MemoryMode::kReadOnly:
+                    data_ok = validate_read_only_probe(staging_values, problem_size);
+                    break;
                 case MemoryMode::kReadWriteCopy:
                     data_ok = validate_source_pattern(staging_values, problem_size);
                     break;
@@ -713,6 +771,9 @@ run_bandwidth_saturation_sweep_experiment(VulkanContext& context, const Benchmar
                 append_note(notes, "bytes_per_element=" + std::to_string(mode_descriptor.bytes_per_element));
                 append_note(notes, "local_size_x=" + std::to_string(kLocalSizeX));
                 append_note(notes, "group_count_x=" + std::to_string(group_count_x));
+                if (mode_descriptor.mode == MemoryMode::kReadOnly) {
+                    append_note(notes, "validation_probe_count=" + std::to_string(kReadOnlyProbeCount));
+                }
                 if (!upload_ok) {
                     append_note(notes, "upload_ms_non_finite");
                 }

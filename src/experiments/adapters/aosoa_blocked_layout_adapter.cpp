@@ -1,6 +1,7 @@
 #include "experiments/aosoa_blocked_layout_experiment.hpp"
 #include "experiments/experiment_contract.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -10,7 +11,8 @@ bool run_aosoa_blocked_layout_experiment_adapter(VulkanContext& context, const B
     AosoaBlockedLayoutExperimentOutput experiment_output = run_aosoa_blocked_layout_experiment(
         context, runner,
         AosoaBlockedLayoutExperimentConfig{
-            .max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 3U)),
             .aos_shader_path = "",
             .soa_shader_path = "",
             .aosoa_shader_path = "",

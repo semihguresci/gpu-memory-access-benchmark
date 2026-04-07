@@ -1,0 +1,74 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(binding = 0, std430) readonly buffer InputBuffer {
+    uint values[];
+} src_buffer;
+
+layout(binding = 1, std430) writeonly buffer OutputBuffer {
+    uint values[];
+} dst_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint pattern_mode;
+    uint random_threshold;
+    uint random_seed;
+    uint branch_work_rounds;
+    uint true_salt;
+    uint false_salt;
+} pc;
+
+uint rotl(uint value, uint shift) {
+    return (value << shift) | (value >> (32u - shift));
+}
+
+uint hash32(uint value) {
+    value ^= value >> 16u;
+    value *= 0x7FEB352Du;
+    value ^= value >> 15u;
+    value *= 0x846CA68Bu;
+    value ^= value >> 16u;
+    return value;
+}
+
+bool should_take_true(uint index) {
+    if (pc.pattern_mode == 0u) {
+        return true;
+    }
+    if (pc.pattern_mode == 1u) {
+        return false;
+    }
+    if (pc.pattern_mode == 2u) {
+        return (index & 1u) == 0u;
+    }
+    return hash32(index ^ pc.random_seed) < pc.random_threshold;
+}
+
+uint branch_mix(uint state, uint salt, uint branch_work_rounds) {
+    for (uint round = 0u; round < branch_work_rounds; ++round) {
+        uint round_salt = salt ^ (round * 0x9E3779B9u);
+        state += round_salt + 0x7F4A7C15u;
+        state ^= state >> 16u;
+        state = rotl(state, 7u);
+        state *= 0x85EBCA6Bu;
+        state ^= state >> 13u;
+        state += 0xC2B2AE35u;
+    }
+
+    return state;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= pc.element_count) {
+        return;
+    }
+
+    uint input_value = src_buffer.values[index];
+    uint state_seed = input_value ^ (index * 0x9E3779B9u) ^ pc.random_seed;
+    uint result = should_take_true(index) ? branch_mix(state_seed, pc.true_salt, pc.branch_work_rounds)
+                                          : branch_mix(state_seed, pc.false_salt, pc.branch_work_rounds);
+    dst_buffer.values[index] = result;
+}

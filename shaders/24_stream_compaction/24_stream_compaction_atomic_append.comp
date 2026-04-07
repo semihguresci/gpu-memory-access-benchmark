@@ -1,0 +1,53 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(std430, binding = 5) buffer CounterBuffer {
+    uint value;
+} counter_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint block_count;
+    uint valid_ratio_percent;
+    uint pattern_seed;
+} push_constants;
+
+const uint kHashMul0 = 0x7feb352du;
+const uint kHashMul1 = 0x846ca68bu;
+
+uint hash_index(uint index_value) {
+    uint value = index_value ^ push_constants.pattern_seed;
+    value ^= value >> 16u;
+    value *= kHashMul0;
+    value ^= value >> 15u;
+    value *= kHashMul1;
+    value ^= value >> 16u;
+    return value;
+}
+
+bool is_index_valid(uint index_value) {
+    return (hash_index(index_value) % 100u) < push_constants.valid_ratio_percent;
+}
+
+void main() {
+    const uint index_value = gl_GlobalInvocationID.x;
+    if (index_value >= push_constants.element_count) {
+        return;
+    }
+
+    if (!is_index_valid(index_value)) {
+        return;
+    }
+
+    const uint dst_index = atomicAdd(counter_buffer.value, 1u);
+    output_buffer.values[dst_index] = input_buffer.values[index_value];
+}

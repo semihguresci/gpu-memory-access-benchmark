@@ -1,19 +1,17 @@
-# Experiment 05: Global ID Mapping Variants
+﻿# Experiment 05: Global ID Mapping Variants
 
-## Overview
-This folder contains implementation, planning, and artifact-generation files for Experiment 05.
+## Folder Role
+This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
-## Files
-- `experiment_plan.md`: experiment lecture-note plan used as the canonical technical spec.
-- `development_plan.md`: development sequencing and status tracking for this experiment.
-- `implementation_plan.md`: concrete implementation task checklist with file-level work packages.
-- `architecture.md`: runtime architecture and execution-flow reference with Mermaid diagrams.
-- `results.md`: run outcomes, charts, and interpretation for this experiment.
-- `scripts/`: experiment-local analysis and plotting scripts.
-  - `scripts/README.md`: how to run experiment-local scripts.
-- `runs/`: collected per-device run JSON snapshots for cross-device aggregation.
-- `results/tables/`: experiment-local machine-readable outputs.
-- `results/charts/`: experiment-local chart outputs.
+## Canonical Documents
+- [Experiment plan](../../docs/experiment_plans/05_global_id_mapping_variants.md)
+- [Results report](results.md)
 
-## Canonical Source
-- ../../docs/experiment_plans/05_global_id_mapping_variants.md
+## Local Contents
+- `results.md`: current measured conclusions and artifact links
+- `results/`: generated tables and charts
+- `runs/`: archived raw benchmark exports
+- `scripts/`: experiment-local collection and analysis helpers
+- [scripts/README.md](scripts/README.md): local script usage notes
+
+Repo-wide architecture, development planning, and implementation sequencing live under `../../docs/`.

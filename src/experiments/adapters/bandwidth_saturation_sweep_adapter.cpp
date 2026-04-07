@@ -1,6 +1,7 @@
 #include "experiments/bandwidth_saturation_sweep_experiment.hpp"
 #include "experiments/experiment_contract.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -10,7 +11,8 @@ bool run_bandwidth_saturation_sweep_experiment_adapter(VulkanContext& context, c
     BandwidthSaturationSweepExperimentOutput experiment_output = run_bandwidth_saturation_sweep_experiment(
         context, runner,
         BandwidthSaturationSweepExperimentConfig{
-            .max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 3U)),
             .read_only_shader_path = "",
             .write_only_shader_path = "",
             .read_write_copy_shader_path = "",

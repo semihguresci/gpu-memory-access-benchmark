@@ -600,8 +600,8 @@ VkDeviceSize storage_stride_bytes(LayoutVariant variant) {
     return kPackedStorageStrideBytes;
 }
 
-double bytes_per_particle(LayoutVariant variant) {
-    return static_cast<double>(storage_stride_bytes(variant) * 2U);
+double measured_bytes_per_particle() {
+    return static_cast<double>(kLogicalPayloadBytes * 2U);
 }
 
 double alignment_waste_ratio(LayoutVariant variant) {
@@ -610,14 +610,13 @@ double alignment_waste_ratio(LayoutVariant variant) {
     return (stride_bytes - logical_bytes) / logical_bytes;
 }
 
-double compute_effective_gbps(LayoutVariant variant, uint32_t particles, uint32_t dispatch_count,
-                              double dispatch_gpu_ms) {
+double compute_effective_gbps(uint32_t particles, uint32_t dispatch_count, double dispatch_gpu_ms) {
     if (!std::isfinite(dispatch_gpu_ms) || dispatch_gpu_ms <= 0.0) {
         return 0.0;
     }
 
     const double bytes =
-        bytes_per_particle(variant) * static_cast<double>(particles) * static_cast<double>(dispatch_count);
+        measured_bytes_per_particle() * static_cast<double>(particles) * static_cast<double>(dispatch_count);
     return bytes / (dispatch_gpu_ms * 1.0e6);
 }
 
@@ -705,7 +704,7 @@ void run_variant_case(VulkanContext& context, const BenchmarkRunner& runner, Lay
             .gpu_ms = dispatch_ms,
             .end_to_end_ms = end_to_end_ms.count(),
             .throughput = compute_throughput_elements_per_second(particles, kDispatchCount, dispatch_ms),
-            .gbps = compute_effective_gbps(layout_variant, particles, kDispatchCount, dispatch_ms),
+            .gbps = compute_effective_gbps(particles, kDispatchCount, dispatch_ms),
             .correctness_pass = correctness,
             .notes = notes,
         });

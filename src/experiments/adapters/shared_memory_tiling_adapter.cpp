@@ -1,6 +1,7 @@
 #include "experiments/experiment_contract.hpp"
 #include "experiments/shared_memory_tiling_experiment.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -10,7 +11,9 @@ bool run_shared_memory_tiling_experiment_adapter(VulkanContext& context, const B
     SharedMemoryTilingExperimentOutput experiment_output = run_shared_memory_tiling_experiment(
         context, runner,
         SharedMemoryTilingExperimentConfig{
-            .max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 2U)),
+            .scratch_size_bytes = options.scratch_size_bytes,
             .direct_shader_path = "",
             .tiled_shader_path = "",
             .verbose_progress = options.verbose_progress,

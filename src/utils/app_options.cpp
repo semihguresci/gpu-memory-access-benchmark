@@ -67,8 +67,7 @@ std::string trim_copy(std::string_view value) {
 }
 
 bool is_known_experiment(const std::vector<std::string>& available_experiment_ids, std::string_view experiment_id) {
-    return std::find(available_experiment_ids.begin(), available_experiment_ids.end(), experiment_id) !=
-           available_experiment_ids.end();
+    return std::ranges::find(available_experiment_ids, experiment_id) != available_experiment_ids.end();
 }
 
 std::string format_available_experiment_ids(const std::vector<std::string>& available_experiment_ids) {
@@ -130,8 +129,7 @@ bool parse_experiment_selection(const std::string& raw_selection,
             return false;
         }
 
-        if (std::find(out_selected_experiment_ids.begin(), out_selected_experiment_ids.end(), token) ==
-            out_selected_experiment_ids.end()) {
+        if (std::ranges::find(out_selected_experiment_ids, token) == out_selected_experiment_ids.end()) {
             out_selected_experiment_ids.push_back(token);
         }
 
@@ -167,7 +165,9 @@ AppOptions ArgumentParser::parse(int argc, char** argv, const std::vector<std::s
     app.add_option("--warmup", options.warmup_iterations, "Warmup iterations")->check(CLI::NonNegativeNumber);
     app.add_flag("--verbose-progress", options.verbose_progress,
                  "Enable verbose per-stage progress logs during experiment execution");
-    app.add_option("--size", size_text, "Scratch buffer size in bytes or with K/M/G suffix");
+    app.add_option(
+        "--size", size_text,
+        "Total scratch budget in bytes or with K/M/G suffix; experiments may split it across multiple buffers");
     app.add_option("--output", options.output_path, "Output JSON path");
 
     try {

@@ -17,6 +17,7 @@
 
 namespace {
 
+using ExperimentMetrics::compute_effective_gbps;
 using ExperimentMetrics::compute_throughput_elements_per_second;
 
 constexpr const char* kExperimentId = "05_global_id_mapping_variants";
@@ -24,6 +25,7 @@ constexpr uint32_t kLocalSizeX = 256U;
 constexpr uint32_t kMinProblemPower = 10U;
 constexpr uint32_t kMaxProblemPower = 24U;
 constexpr uint32_t kFixedOffsetElements = 17U;
+constexpr uint32_t kGridStrideLaunchDivisor = 4U;
 constexpr float kOutputSentinel = -65432.0F;
 constexpr std::array<uint32_t, 8> kDispatchCounts = {1U, 4U, 16U, 64U, 128U, 256U, 512U, 1024U};
 
@@ -108,16 +110,6 @@ bool validate_output_pattern(const float* values, uint32_t element_count) {
     return true;
 }
 
-double compute_effective_gbps(uint32_t problem_size, uint32_t dispatch_count, double dispatch_gpu_ms) {
-    if (!std::isfinite(dispatch_gpu_ms) || dispatch_gpu_ms <= 0.0) {
-        return 0.0;
-    }
-
-    const double bytes_per_dispatch = static_cast<double>(problem_size) * static_cast<double>(sizeof(float) * 2U);
-    const double bytes = bytes_per_dispatch * static_cast<double>(dispatch_count);
-    return bytes / (dispatch_gpu_ms * 1.0e6);
-}
-
 std::vector<uint32_t> make_problem_sizes(uint32_t max_elements, uint32_t max_group_count_x) {
     std::vector<uint32_t> sizes;
     sizes.reserve(kMaxProblemPower - kMinProblemPower + 1U);
@@ -147,6 +139,14 @@ uint32_t compute_total_invocations(uint32_t group_count_x) {
     }
 
     return static_cast<uint32_t>(total_invocations);
+}
+
+uint32_t compute_launch_group_count_x(MappingMode mode, uint32_t full_group_count_x) {
+    if (mode != MappingMode::kGridStride) {
+        return full_group_count_x;
+    }
+
+    return std::max(1U, full_group_count_x / kGridStrideLaunchDivisor);
 }
 
 void destroy_pipeline_resources(VulkanContext& context, PipelineResources& resources) {
@@ -399,15 +399,19 @@ run_global_id_mapping_variants_experiment(VulkanContext& context, const Benchmar
 
     for (const uint32_t problem_size : problem_sizes) {
         const VkDeviceSize bytes = static_cast<VkDeviceSize>(problem_size) * sizeof(float);
-        const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(problem_size, kLocalSizeX);
-        const uint32_t total_invocations = compute_total_invocations(group_count_x);
+        const uint32_t full_group_count_x = VulkanComputeUtils::compute_group_count_1d(problem_size, kLocalSizeX);
 
         for (const MappingVariant variant : kMappingVariants) {
+            const uint32_t launch_group_count_x = compute_launch_group_count_x(variant.mode, full_group_count_x);
+            const uint32_t total_invocations = compute_total_invocations(launch_group_count_x);
+
             for (const uint32_t dispatch_count : kDispatchCounts) {
                 if (verbose_progress) {
                     std::cout << "[" << kExperimentId << "] Case " << (completed_case_count + 1U) << "/"
                               << total_case_count << ": variant=" << variant.name << ", problem_size=" << problem_size
-                              << ", dispatch_count=" << dispatch_count << ", group_count_x=" << group_count_x
+                              << ", dispatch_count=" << dispatch_count
+                              << ", launch_group_count_x=" << launch_group_count_x
+                              << ", full_group_count_x=" << full_group_count_x
                               << ", total_invocations=" << total_invocations << "\n";
                 }
 
@@ -425,8 +429,9 @@ run_global_id_mapping_variants_experiment(VulkanContext& context, const Benchmar
                         .fixed_offset = kFixedOffsetElements,
                         .total_invocations = total_invocations,
                     };
-                    const double dispatch_ms = run_dispatch_stage(context, pipeline_resources, buffers.dst_device,
-                                                                  bytes, group_count_x, dispatch_count, push_constants);
+                    const double dispatch_ms =
+                        run_dispatch_stage(context, pipeline_resources, buffers.dst_device, bytes, launch_group_count_x,
+                                           dispatch_count, push_constants);
                     const double readback_ms = run_readback_stage(context, buffers.dst_device, buffers.staging, bytes);
 
                     if (!std::isfinite(upload_src_ms) || !std::isfinite(upload_dst_ms) || !std::isfinite(dispatch_ms) ||
@@ -441,6 +446,7 @@ run_global_id_mapping_variants_experiment(VulkanContext& context, const Benchmar
                         std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/"
                                   << runner.warmup_iterations() << " variant=" << variant.name
                                   << ", problem_size=" << problem_size << ", dispatch_count=" << dispatch_count
+                                  << ", launch_group_count_x=" << launch_group_count_x
                                   << ", upload_src_ms=" << upload_src_ms << ", upload_dst_ms=" << upload_dst_ms
                                   << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
                                   << ", correctness=" << (warmup_ok ? "pass" : "fail") << "\n";
@@ -460,8 +466,9 @@ run_global_id_mapping_variants_experiment(VulkanContext& context, const Benchmar
                         .fixed_offset = kFixedOffsetElements,
                         .total_invocations = total_invocations,
                     };
-                    const double dispatch_ms = run_dispatch_stage(context, pipeline_resources, buffers.dst_device,
-                                                                  bytes, group_count_x, dispatch_count, push_constants);
+                    const double dispatch_ms =
+                        run_dispatch_stage(context, pipeline_resources, buffers.dst_device, bytes, launch_group_count_x,
+                                           dispatch_count, push_constants);
                     const double readback_ms = run_readback_stage(context, buffers.dst_device, buffers.staging, bytes);
 
                     const auto end = std::chrono::high_resolution_clock::now();
@@ -475,11 +482,14 @@ run_global_id_mapping_variants_experiment(VulkanContext& context, const Benchmar
 
                     std::string notes;
                     append_note(notes, "local_size_x=" + std::to_string(kLocalSizeX));
-                    append_note(notes, "group_count_x=" + std::to_string(group_count_x));
+                    append_note(notes, "launch_group_count_x=" + std::to_string(launch_group_count_x));
+                    append_note(notes, "full_group_count_x=" + std::to_string(full_group_count_x));
                     append_note(notes, "total_invocations=" + std::to_string(total_invocations));
                     append_note(notes, "mapping=" + std::string(variant.name));
                     if (variant.mode == MappingMode::kOffset) {
                         append_note(notes, "fixed_offset=" + std::to_string(kFixedOffsetElements));
+                    } else if (variant.mode == MappingMode::kGridStride) {
+                        append_note(notes, "launch_divisor=" + std::to_string(kGridStrideLaunchDivisor));
                     }
                     if (!upload_src_ok) {
                         append_note(notes, "upload_src_ms_non_finite");
@@ -503,6 +513,7 @@ run_global_id_mapping_variants_experiment(VulkanContext& context, const Benchmar
                         std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/"
                                   << runner.timed_iterations() << " variant=" << variant.name
                                   << ", problem_size=" << problem_size << ", dispatch_count=" << dispatch_count
+                                  << ", launch_group_count_x=" << launch_group_count_x
                                   << ", upload_src_ms=" << upload_src_ms << ", upload_dst_ms=" << upload_dst_ms
                                   << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
                                   << ", end_to_end_ms=" << end_to_end_ms.count()
@@ -517,7 +528,8 @@ run_global_id_mapping_variants_experiment(VulkanContext& context, const Benchmar
                         .gpu_ms = dispatch_ms,
                         .end_to_end_ms = end_to_end_ms.count(),
                         .throughput = compute_throughput_elements_per_second(problem_size, dispatch_count, dispatch_ms),
-                        .gbps = compute_effective_gbps(problem_size, dispatch_count, dispatch_ms),
+                        .gbps = compute_effective_gbps(problem_size, dispatch_count,
+                                                       static_cast<uint32_t>(sizeof(float) * 2U), dispatch_ms),
                         .correctness_pass = correctness,
                         .notes = notes,
                     });

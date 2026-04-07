@@ -1,0 +1,43 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint logical_count;
+    uint stride_elements;
+    uint inner_iterations;
+} push_constants;
+
+const uint kWorkgroupSize = 256u;
+const uint kMaxStrideElements = 33u;
+shared uint shared_values[kWorkgroupSize * kMaxStrideElements];
+
+void main() {
+    const uint global_index = gl_GlobalInvocationID.x;
+    const uint local_index = gl_LocalInvocationID.x;
+    const uint shared_index = local_index * push_constants.stride_elements;
+
+    shared_values[shared_index] = global_index < push_constants.logical_count ? input_buffer.values[global_index] : 0u;
+    barrier();
+
+    if (global_index >= push_constants.logical_count) {
+        return;
+    }
+
+    uint accumulator = input_buffer.values[global_index];
+    for (uint iteration = 0u; iteration < push_constants.inner_iterations; ++iteration) {
+        const uint read_local = (local_index + iteration) % kWorkgroupSize;
+        const uint read_index = read_local * push_constants.stride_elements;
+        accumulator = (accumulator * 1664525u) + shared_values[read_index] + 1013904223u + iteration;
+    }
+
+    output_buffer.values[global_index] = accumulator;
+}

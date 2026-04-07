@@ -16,6 +16,7 @@
 
 namespace {
 
+using ExperimentMetrics::compute_effective_gbps;
 using ExperimentMetrics::compute_throughput_elements_per_second;
 
 constexpr uint32_t kLocalSizeX = 64;
@@ -263,15 +264,6 @@ bool validate_noop_result(const float* data, uint32_t count, float sentinel_valu
     return true;
 }
 
-double compute_effective_gbps(uint32_t problem_size, uint32_t dispatch_count, double dispatch_gpu_ms) {
-    if (!std::isfinite(dispatch_gpu_ms) || dispatch_gpu_ms <= 0.0) {
-        return 0.0;
-    }
-
-    const double bytes = static_cast<double>(problem_size) * static_cast<double>(dispatch_count) * sizeof(float);
-    return bytes / (dispatch_gpu_ms * 1.0e6);
-}
-
 std::string build_case_name(const std::string& variant, uint32_t problem_size, uint32_t dispatch_count) {
     return "01_dispatch_basics_" + variant + "_size_" + std::to_string(problem_size) + "_dispatches_" +
            std::to_string(dispatch_count);
@@ -322,7 +314,7 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
     vkGetPhysicalDeviceProperties(context.physical_device(), &device_properties);
     const uint64_t dispatch_limited_elements =
         static_cast<uint64_t>(device_properties.limits.maxComputeWorkGroupCount[0]) * kLocalSizeX;
-    const uint64_t memory_limited_elements = static_cast<uint64_t>(config.max_buffer_bytes / sizeof(float));
+    const auto memory_limited_elements = static_cast<uint64_t>(config.max_buffer_bytes / sizeof(float));
     const uint64_t effective_max_elements = std::min(dispatch_limited_elements, memory_limited_elements);
     const auto max_elements =
         static_cast<uint32_t>(std::min<uint64_t>(effective_max_elements, std::numeric_limits<uint32_t>::max()));
@@ -474,7 +466,8 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                     .gpu_ms = dispatch_ms,
                     .end_to_end_ms = end_to_end_ms.count(),
                     .throughput = compute_throughput_elements_per_second(problem_size, dispatch_count, dispatch_ms),
-                    .gbps = compute_effective_gbps(problem_size, dispatch_count, dispatch_ms),
+                    .gbps = compute_effective_gbps(problem_size, dispatch_count, static_cast<uint32_t>(sizeof(float)),
+                                                   dispatch_ms),
                     .correctness_pass = correctness,
                     .notes = notes,
                 });
@@ -542,6 +535,7 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                 const bool correctness = upload_ok && dispatch_ok && readback_ok && data_ok;
 
                 std::string notes;
+                append_note(notes, "no_payload_bytes");
                 if (!upload_ok) {
                     append_note(notes, "upload_ms_non_finite");
                 }
@@ -572,8 +566,8 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                     .iteration = iteration,
                     .gpu_ms = dispatch_ms,
                     .end_to_end_ms = end_to_end_ms.count(),
-                    .throughput = compute_throughput_elements_per_second(problem_size, dispatch_count, dispatch_ms),
-                    .gbps = compute_effective_gbps(problem_size, dispatch_count, dispatch_ms),
+                    .throughput = 0.0,
+                    .gbps = 0.0,
                     .correctness_pass = correctness,
                     .notes = notes,
                 });

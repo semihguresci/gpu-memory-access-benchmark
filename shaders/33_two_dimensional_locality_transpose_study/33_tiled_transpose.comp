@@ -1,0 +1,43 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint matrix_dim;
+} push_constants;
+
+shared uint tile[16][16];
+
+uint transform_value(uint input_value, uint src_x, uint src_y) {
+    return (input_value ^ (src_x * 131u)) + (src_y * 17u) + 0x9e3779b9u;
+}
+
+void main() {
+    const uvec2 group_base = gl_WorkGroupID.xy * uvec2(16u, 16u);
+    const uint local_x = gl_LocalInvocationID.x;
+    const uint local_y = gl_LocalInvocationID.y;
+    const uint src_x = group_base.x + local_x;
+    const uint src_y = group_base.y + local_y;
+
+    if (src_x < push_constants.matrix_dim && src_y < push_constants.matrix_dim) {
+        tile[local_y][local_x] = input_buffer.values[(src_y * push_constants.matrix_dim) + src_x];
+    }
+    barrier();
+
+    const uint dst_x = group_base.y + local_x;
+    const uint dst_y = group_base.x + local_y;
+    const uint value_src_x = group_base.x + local_y;
+    const uint value_src_y = group_base.y + local_x;
+    if (dst_x < push_constants.matrix_dim && dst_y < push_constants.matrix_dim) {
+        output_buffer.values[(dst_y * push_constants.matrix_dim) + dst_x] =
+            transform_value(tile[local_x][local_y], value_src_x, value_src_y);
+    }
+}

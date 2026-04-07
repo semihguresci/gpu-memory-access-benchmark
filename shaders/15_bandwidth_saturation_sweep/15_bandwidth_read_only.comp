@@ -6,6 +6,10 @@ layout(std430, binding = 0) readonly volatile buffer Source {
     float values[];
 } src;
 
+layout(std430, binding = 1) writeonly buffer ValidationProbe {
+    float values[];
+} probe;
+
 layout(push_constant) uniform Params {
     uint element_count;
 } params;
@@ -16,7 +20,17 @@ void main() {
         return;
     }
 
+    // Volatile read keeps the memory load observable for bandwidth measurement.
     float value = src.values[id];
+    if (id == 0u) {
+        probe.values[0] = value;
+    } else if (id == (params.element_count / 3u)) {
+        probe.values[1] = value;
+    } else if (id == ((params.element_count * 2u) / 3u)) {
+        probe.values[2] = value;
+    } else if ((id + 1u) == params.element_count) {
+        probe.values[3] = value;
+    }
     if (value > 1.0e38) {
         return;
     }

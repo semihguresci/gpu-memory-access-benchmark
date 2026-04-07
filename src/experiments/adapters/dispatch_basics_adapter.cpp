@@ -1,6 +1,7 @@
 #include "experiments/dispatch_basics_experiment.hpp"
 #include "experiments/experiment_contract.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -9,11 +10,13 @@ bool run_dispatch_basics_experiment_adapter(VulkanContext& context, const Benchm
                                             const AppOptions& options, ExperimentRunOutput& output) {
     DispatchBasicsExperimentOutput experiment_output = run_dispatch_basics_experiment(
         context, runner,
-        DispatchBasicsExperimentConfig{.max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
-                                       .write_shader_path = "",
-                                       .noop_shader_path = "",
-                                       .include_noop_variant = true,
-                                       .verbose_progress = options.verbose_progress});
+        DispatchBasicsExperimentConfig{
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 3U)),
+            .write_shader_path = "",
+            .noop_shader_path = "",
+            .include_noop_variant = true,
+            .verbose_progress = options.verbose_progress});
 
     output.summary_results = std::move(experiment_output.summary_results);
     output.rows = std::move(experiment_output.rows);

@@ -1,140 +1,85 @@
-# GPU Memory Layout and Cache Behavior
+# GPU Memory Access Optimization: Coalescing, Layout, and Cache Behavior
 
-Repository: `gpu-memory-layout-playground`
+Public project title: `GPU Memory Access Optimization: Coalescing, Layout, and Cache Behavior`  
+Repository and current runtime target: `gpu-memory-layout-playground` / `gpu_memory_layout_experiments`
 
-This project is an incremental Vulkan compute benchmarking program focused on how GPUs execute code and how memory behavior affects performance.
+This repository is a Vulkan compute benchmarking project focused on one question: how much GPU performance is won or lost by the way memory is laid out and accessed?
 
-## Purpose
-The goal is to build a strong, reproducible performance portfolio that shows the ability to:
-- reason about GPU execution behavior
-- design architecture-aware experiments
-- measure performance correctly
-- connect low-level results to rendering-adjacent systems
+The project is positioned as results-backed engineering work, not a toy benchmark collection. It studies layout, coalescing, locality, bandwidth saturation, and shared-memory staging with reproducible Vulkan compute experiments and artifact-driven reports.
 
-## Project Principles
-Every experiment should:
-- test one primary concept
-- produce quantitative output
-- include short theory and clear conclusions
-- be reproducible
-- build on previous experiments
+## Problem
+- GPUs are frequently bandwidth-bound rather than ALU-bound.
+- Memory access patterns often dominate kernel performance.
+- Small indexing or layout changes can collapse effective throughput even when arithmetic stays constant.
+- Real GPU engineering work depends on understanding coalescing, cache behavior, and when on-chip staging is actually worth the cost.
 
-## Current Scope
-The roadmap has been expanded to 25 experiments across six levels:
-1. Foundations: execution model and Vulkan compute baselines
-2. Memory layout fundamentals
-3. Access patterns and cache behavior
-4. On-chip memory, occupancy, and control flow
-5. Atomics and parallel primitives
-6. Rendering-adjacent capstone pipeline
+## Results Snapshot
+| Experiment | Improvement | Current evidence |
+| --- | --- | --- |
+| SoA vs AoS | `+2742%` GPU-time speedup (`28.42x` faster) and `+2032%` effective-bandwidth gain for `SoA` | Experiment 06, `64 MiB`, `1,000,000` elements |
+| Coalesced vs Strided | `+1298%` to `+8808%` GPU-time speedup for coalesced access depending on stride | Experiment 11, stride sweep `1, 2, 4, 8, 16, 32, 64`, `128 MiB` |
+| Cache line utilization / reuse | Bounded reuse is about `1.32x` faster than full-span replay | Experiment 14, `32 MiB` locality study |
+| Memory bandwidth saturation | Read-only traffic sustains about `899 GB/s` from `96-512 MiB`; read-write copy sustains about `419 GB/s` | Experiment 15 saturation sweep |
+| Shared memory vs global memory | Current tiled kernel is `0.65%-2.85%` slower than direct global access | Experiment 16, reuse-radius sweep |
 
-Detailed status and per-experiment goals are tracked in:
-- `docs/development_principles_and_plan.md`
-- `docs/advanced_investigations_roadmap.md`
-- `docs/core_experiment_plans_index.md`
-- `docs/advanced_investigation_plans_index.md`
+## Methodology
+| Dimension | Current setup |
+| --- | --- |
+| GPU | Desktop: `NVIDIA GeForce RTX 2080 SUPER` (`Vulkan 1.4.325`, driver `2480242688`) |
+| Mobile track | `Adreno` validation is planned as a cross-GPU extension, not yet part of the measured baseline |
+| Measurement | GPU timestamp queries, median GPU time as the primary metric, `p95` for stability |
+| Data sizes | `32 MiB`, `64 MiB`, `128 MiB`, and `512 MiB` depending on the experiment |
+| Outputs | Raw JSON exports, CSV summaries, PNG charts, and per-experiment `results.md` reports |
 
-## Planned Experiment Levels
-- Level 1 (01-05): dispatch basics, local size sweep, copy baseline, sequential indexing, ID mapping variants
-- Level 2 (06-10): AoS vs SoA, AoSoA, std430/std140/packed, vec padding costs, scalar width sweep
-- Level 3 (11-15): coalesced/strided, gather, scatter, locality reuse, bandwidth saturation
-- Level 4 (16-20): shared memory tiling, tile sweep, register pressure proxy, divergence, barrier costs
-- Level 5 (21-24): reduction, scan, histogram contention, stream compaction
-- Level 6 (25): spatial binning or clustered culling capstone
+## Core Experiment Set
+| Status | Experiment | Purpose |
+| --- | --- | --- |
+| Implemented | AoS vs SoA | Layout efficiency for field-wise kernels |
+| Implemented | Coalesced vs Strided | Memory transaction efficiency under stride |
+| Implemented | Cache line utilization and reuse distance | Locality and replay cost |
+| Implemented | Memory bandwidth saturation | Steady-state throughput limits |
+| Implemented | Shared memory vs global memory | Whether staging overhead is repaid |
+| Implemented | Warp-level coalescing alignment | Aligned vs misaligned contiguous accesses |
+| Implemented | Cache thrashing | Random vs sequential working sets |
+| Priority next | Cross-GPU validation | Desktop vs mobile/Adreno behavior |
 
-## Advanced Extension Track
-After the first 25 experiments, the project continues with 12 advanced investigations focused on:
-- GPU sorting and data reordering
-- BVH and traversal-oriented layout analysis
-- rendering culling/list-building pipelines
-- subgroup-level optimization
-- async overlap and scheduling models
-- occupancy-guided interpretation
-- cross-GPU reproducibility
+## Key Findings
+- Coalesced access is the dominant good-path baseline. The first loss of coalescing causes the largest collapse in effective throughput.
+- `SoA` is the correct default layout for field-wise access on the current workload. `AoS` wastes bandwidth badly.
+- Cache-friendly bounded reuse materially outperforms full-span replay, even without hardware counters.
+- Shared memory is not automatically faster. The current staging kernel does more work without repaying that overhead.
+- Size sweeps matter. Small transfers do not represent the sustained bandwidth region.
 
-Recommended follow-up execution order:
-1. Core primitives: radix sort, subgroup operations, occupancy modeling
-2. Rendering data systems: tiled assignment, frustum vs clustered, GPU-driven building blocks
-3. Architecture depth: BVH layouts, ray-friendly memory layouts, frame-to-frame coherence
-4. Systems/platform depth: persistent work queues, async overlap, cross-GPU comparison
+## Visuals
+Current graphs:
+- [AoS vs SoA GB/s chart](./experiments/06_aos_vs_soa/results/charts/aos_vs_soa_gbps_vs_size.png)
+- [Coalesced vs Strided slowdown chart](./experiments/11_coalesced_vs_strided/results/charts/coalesced_vs_strided_slowdown_vs_stride_1.png)
+- [Bandwidth saturation GB/s chart](./experiments/15_bandwidth_saturation_sweep/results/charts/bandwidth_saturation_gbps_vs_size.png)
+- [Shared memory vs direct-global speedup chart](./experiments/16_shared_memory_tiling/results/charts/shared_memory_tiling_speedup_vs_direct.png)
 
-## Repository Layout
-```text
-gpu-memory-layout-playground/
-|- docs/
-|- experiments/
-|- shaders/
-|- src/
-|- scripts/
-|- results/
-`- third_party/
-```
+![AoS vs SoA GB/s](./experiments/06_aos_vs_soa/results/charts/aos_vs_soa_gbps_vs_size.png)
 
-## Benchmarking Standards
-- prefer GPU timestamp queries for timing
-- separate upload, dispatch, and readback timing when applicable
-- include warmup passes
-- report median and p95 when useful
-- keep raw machine-readable outputs
-- validate correctness for every experiment
-- log GPU, driver, Vulkan version, OS, and build options
+![Coalesced vs Strided Slowdown](./experiments/11_coalesced_vs_strided/results/charts/coalesced_vs_strided_slowdown_vs_stride_1.png)
 
-## Generated Artifacts Policy
-Generated benchmark outputs are intentionally not committed.
+![Bandwidth Saturation](./experiments/15_bandwidth_saturation_sweep/results/charts/bandwidth_saturation_gbps_vs_size.png)
 
-Ignored artifact paths include:
-- `experiments/*/results/charts/*`
-- `experiments/*/results/tables/*`
-- `experiments/*/runs/**/*`
+Profiler screenshots to add:
+- Warp-level alignment capture: aligned vs misaligned coalescing on the same warp-sized load.
+- Cache-thrashing capture: sequential vs random access with memory-stall or cache-hit counters.
+- Shared-memory staging capture: `shared_tiled` vs `direct_global` stall breakdown.
 
-This keeps the repository source-focused while still allowing full local regeneration.
+## Engineering Insight
+### Why coalescing matters
+Warps and waves issue many lane requests together. When neighboring lanes read neighboring addresses, the memory system can satisfy the group with fewer transactions. When access becomes strided or misaligned, the hardware moves more bytes for the same useful work.
 
-## Regenerate Experiment Artifacts
-`generate_experiment_artifacts.py` only builds artifacts from existing logs and does not run benchmarks.
+### How GPU memory transactions work
+The GPU does not service each lane as an isolated scalar load. Lane requests are merged into cache-line or transaction-sized memory operations. Effective bandwidth falls when the transaction footprint grows faster than the useful-data footprint.
 
-Collect fresh benchmark data first:
+### Relation to SIMD and warps
+Poor coalescing is the memory-side equivalent of wasted SIMD efficiency. Branch divergence wastes active lanes; bad memory layout wastes transferred bytes. Both reduce how much useful work each issued warp or wave actually produces.
 
-```powershell
-python scripts/run_experiment_data_collection.py
-```
-
-Then regenerate charts/tables:
-
-```powershell
-python scripts/generate_experiment_artifacts.py
-```
-
-Optional variants:
-
-```powershell
-python scripts/run_experiment_data_collection.py --iterations 10 --warmup 3 --size 8M --validation
-python scripts/generate_experiment_artifacts.py --collect-run
-```
-
-## Per-Experiment Output Template
-```text
-experiments/NN_name/
-|- README.md
-|- shader.comp
-|- host.cpp
-|- config.json
-|- results.csv
-|- chart.png
-`- notes.md
-```
-
-## Lecture-Note Planning Packs
-- Core lecture-note plans (01-25): `docs/experiment_plans/`
-- Advanced lecture-note plans (01-12): `docs/advanced_plans/`
-
-## Documentation Roadmap
-- `docs/README.md`: documentation landing page and reading order
-- `docs/development_principles_and_plan.md`: development principles plus end-to-end program structure and milestones
-- `docs/core_experiment_plans_index.md`: indexed core plans (01-25)
-- `docs/experiment_plans/`: detailed lecture-note plan per core experiment
-- `docs/advanced_investigations_roadmap.md`: advanced-track roadmap and phases
-- `docs/advanced_investigation_plans_index.md`: indexed advanced plans (01-12)
-- `docs/advanced_plans/`: detailed lecture-note plan per advanced investigation
-
-## Portfolio Signal
-By the end of the 25 experiments, this repository should show practical ability to build Vulkan compute benchmarks, analyze memory behavior, and implement performance-relevant GPU systems.
+## Documentation
+- [Research Overview](./docs/research_overview.md)
+- [Development Principles and Plan](./docs/development_principles_and_plan.md)
+- [Core Experiment Plans Index](./docs/core_experiment_plans_index.md)
+- [Advanced Investigations Roadmap](./docs/advanced_investigations_roadmap.md)

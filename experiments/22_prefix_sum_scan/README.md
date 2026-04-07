@@ -1,12 +1,16 @@
-# Experiment 22: Prefix Sum or Scan
+﻿# Experiment 22: Prefix Sum Scan
 
-## Overview
-This folder contains experiment-local planning artifacts and implementation scaffolding.
+## Folder Role
+This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
-## Files
-- `experiment_plan.md`: experiment lecture-note plan used as the canonical technical spec.
-- `development_plan.md`: development sequencing notes for this experiment (when available).
-- `implementation_plan.md`: concrete implementation task checklist for this experiment (when available).
+## Canonical Documents
+- [Experiment plan](../../docs/experiment_plans/22_prefix_sum_scan.md)
+- [Results report](results.md)
 
-## Canonical Source
-- ../../docs/experiment_plans/22_prefix_sum_scan.md
+## Local Contents
+- `results.md`: current measured conclusions and artifact links
+- `results/`: generated tables and charts
+- `runs/`: archived raw benchmark exports
+- `scripts/`: experiment-local collection and analysis helpers
+
+Repo-wide architecture, development planning, and implementation sequencing live under `../../docs/`.

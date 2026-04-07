@@ -63,7 +63,9 @@ function(configure_gpu_memory_layout_tests)
     set(unit_test_sources
         tests/unit/app_options_tests.cpp
         tests/unit/benchmark_runner_tests.cpp
+        tests/unit/experiment_metrics_tests.cpp
         tests/unit/json_exporter_tests.cpp
+        tests/unit/scratch_buffer_budget_tests.cpp
         tests/unit/scalar_type_width_utils_tests.cpp
         tests/unit/vulkan_compute_utils_tests.cpp
     )
@@ -87,6 +89,7 @@ function(configure_gpu_memory_layout_tests)
 
     if(ENABLE_GPU_INTEGRATION_TESTS)
         set(integration_test_sources
+            tests/integration/experiment_smoke_tests.cpp
             tests/integration/vulkan_context_integration_tests.cpp
         )
         set(integration_app_sources
@@ -101,7 +104,15 @@ function(configure_gpu_memory_layout_tests)
             APP_SOURCES ${integration_app_sources}
         )
 
+        target_compile_definitions(gpu_memory_layout_integration_tests
+            PRIVATE
+                GPU_MEMORY_LAYOUT_EXPERIMENTS_BINARY_DIR="$<TARGET_FILE_DIR:gpu_memory_layout_experiments>"
+                GPU_MEMORY_LAYOUT_EXPERIMENTS_BINARY_NAME="$<TARGET_FILE_NAME:gpu_memory_layout_experiments>"
+        )
+
+        add_dependencies(gpu_memory_layout_integration_tests gpu_memory_layout_experiments)
         add_dependencies(gpu_memory_layout_tests gpu_memory_layout_integration_tests)
+        add_dependencies(gpu_memory_layout_tests gpu_memory_layout_experiments)
     else()
         message(STATUS "GPU integration tests are disabled (set ENABLE_GPU_INTEGRATION_TESTS=ON to enable).")
     endif()

@@ -1,0 +1,50 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+struct PointRecord {
+    float position_x;
+    uint entity_id;
+};
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    PointRecord records[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer CountBuffer {
+    uint counts[];
+} count_buffer;
+
+layout(std430, binding = 2) buffer ListBuffer {
+    uint entity_ids[];
+} list_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint entity_count;
+    uint bin_count;
+    uint max_entries_per_bin;
+    uint reserved;
+} push_constants;
+
+uint compute_bin_index(float position_x) {
+    float clamped = clamp(position_x, 0.0, 0.99999994);
+    uint scaled = uint(clamped * float(push_constants.bin_count));
+    return min(scaled, push_constants.bin_count - 1u);
+}
+
+void main() {
+    uint global_index = gl_GlobalInvocationID.x;
+    if (global_index >= push_constants.entity_count) {
+        return;
+    }
+
+    PointRecord record = input_buffer.records[global_index];
+    uint bin_index = compute_bin_index(record.position_x);
+    uint slot = atomicAdd(count_buffer.counts[bin_index], 1u);
+    if (slot >= push_constants.max_entries_per_bin) {
+        return;
+    }
+
+    uint output_index = (bin_index * push_constants.max_entries_per_bin) + slot;
+    list_buffer.entity_ids[output_index] = record.entity_id;
+}

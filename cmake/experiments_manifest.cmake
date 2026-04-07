@@ -1,18 +1,44 @@
-set(EXPERIMENT_MANIFEST_ENTRIES
-    "01_dispatch_basics|Dispatch Basics|foundations|run_dispatch_basics_experiment_adapter|ON"
-    "02_local_size_sweep|Local Size Sweep|foundations|run_local_size_sweep_experiment_adapter|ON"
-    "03_memory_copy_baseline|Memory Copy Baseline|foundations|run_memory_copy_baseline_experiment_adapter|ON"
-    "04_sequential_indexing|Sequential Indexing|foundations|run_sequential_indexing_experiment_adapter|ON"
-    "05_global_id_mapping_variants|Global ID Mapping Variants|foundations|run_global_id_mapping_variants_experiment_adapter|ON"
-    "06_aos_vs_soa|AoS vs SoA|memory_layout|run_aos_soa_experiment_adapter|ON"
-    "07_aosoa_blocked_layout|AoSoA Blocked Layout|memory_layout|run_aosoa_blocked_layout_experiment_adapter|ON"
-    "08_std430_std140_packed|std430 vs std140 vs Packed|memory_layout|run_std430_std140_packed_experiment_adapter|ON"
-    "09_vec3_vec4_padding_costs|vec3 vs vec4 Padding Costs|memory_layout|run_vec3_vec4_padding_costs_experiment_adapter|ON"
-    "10_scalar_type_width_sweep|Scalar Type Width Sweep|memory_layout|run_scalar_type_width_sweep_experiment_adapter|ON"
-    "11_coalesced_vs_strided|Coalesced vs Strided Access|access_patterns|run_coalesced_vs_strided_experiment_adapter|ON"
-    "12_gather_access_pattern|Gather Access Pattern|access_patterns|run_gather_access_pattern_experiment_adapter|ON"
-    "13_scatter_access_pattern|Scatter Access Pattern|access_patterns|run_scatter_access_pattern_experiment_adapter|ON"
-    "14_read_reuse_cache_locality|Read Reuse and Cache Locality|access_patterns|run_read_reuse_cache_locality_experiment_adapter|ON"
-    "15_bandwidth_saturation_sweep|Bandwidth Saturation Sweep|access_patterns|run_bandwidth_saturation_sweep_experiment_adapter|ON"
-    "16_shared_memory_tiling|Shared Memory Tiling|on_chip_memory|run_shared_memory_tiling_experiment_adapter|ON"
-)
+set(EXPERIMENT_MANIFEST_JSON_PATH "${CMAKE_SOURCE_DIR}/config/experiment_manifest.json")
+file(READ "${EXPERIMENT_MANIFEST_JSON_PATH}" _experiment_manifest_json)
+
+# CMake consumes the same manifest JSON as the Python tooling so new experiments
+# only need one registration edit before build and script paths stay aligned.
+
+string(JSON _experiment_count LENGTH "${_experiment_manifest_json}" experiments)
+if(_experiment_count EQUAL 0)
+    message(FATAL_ERROR "Experiment manifest at ${EXPERIMENT_MANIFEST_JSON_PATH} is empty.")
+endif()
+
+set(EXPERIMENT_MANIFEST_ENTRIES "")
+set(EXPERIMENT_SOURCE_FILES "")
+set(EXPERIMENT_ADAPTER_SOURCE_FILES "")
+
+math(EXPR _experiment_last_index "${_experiment_count} - 1")
+foreach(_index RANGE ${_experiment_last_index})
+    string(JSON _experiment_id GET "${_experiment_manifest_json}" experiments ${_index} id)
+    string(JSON _display_name GET "${_experiment_manifest_json}" experiments ${_index} display_name)
+    string(JSON _category GET "${_experiment_manifest_json}" experiments ${_index} category)
+    string(JSON _adapter_symbol GET "${_experiment_manifest_json}" experiments ${_index} adapter_symbol)
+    string(JSON _enabled_value GET "${_experiment_manifest_json}" experiments ${_index} enabled)
+    string(JSON _source_path GET "${_experiment_manifest_json}" experiments ${_index} source)
+    string(JSON _adapter_source_path GET "${_experiment_manifest_json}" experiments ${_index} adapter_source)
+
+    if(_experiment_id STREQUAL "" OR _display_name STREQUAL "" OR _category STREQUAL "" OR _adapter_symbol STREQUAL "")
+        message(FATAL_ERROR "Experiment manifest entry ${_index} is missing required registry fields.")
+    endif()
+    if(_source_path STREQUAL "" OR _adapter_source_path STREQUAL "")
+        message(FATAL_ERROR "Experiment manifest entry '${_experiment_id}' is missing source paths.")
+    endif()
+
+    if(_enabled_value)
+        set(_enabled_literal "ON")
+    else()
+        set(_enabled_literal "OFF")
+    endif()
+
+    list(APPEND EXPERIMENT_MANIFEST_ENTRIES
+        "${_experiment_id}|${_display_name}|${_category}|${_adapter_symbol}|${_enabled_literal}"
+    )
+    list(APPEND EXPERIMENT_SOURCE_FILES "${CMAKE_SOURCE_DIR}/${_source_path}")
+    list(APPEND EXPERIMENT_ADAPTER_SOURCE_FILES "${CMAKE_SOURCE_DIR}/${_adapter_source_path}")
+endforeach()

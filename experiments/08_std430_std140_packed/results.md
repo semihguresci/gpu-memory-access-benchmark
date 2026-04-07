@@ -1,36 +1,39 @@
-# Experiment 08 Results: std430 vs std140 vs Packed
+# Experiment 08 Results: Std430 Std140 Packed
 
 ## Run Status
-- Benchmark status: latest `full_refresh_20260329` collection completed (`60/60` row correctness pass)
-- Test status: no additional tests were run during this report refresh
+- Benchmark status: latest `full_refresh_20260405` collection completed (`45/45` row correctness pass)
+- Test status: `ctest --test-dir build-tests-vs -C Release --output-on-failure` passed `37/37` after integration changes
 - GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --size 128M --label full_refresh_20260329`
+- Config: `--iterations 5 --warmup 2 --label full_refresh_20260405`
 - Validation layers: `disabled`
 - GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-03-29T14:34:02Z`
-- Latest collected run: [runs/nvidia_geforce_rtx_2080_super/20260329_143402Z_full_refresh_20260329.json](./runs/nvidia_geforce_rtx_2080_super/20260329_143402Z_full_refresh_20260329.json)
-- Sweep coverage: `3` variants x `4` problem sizes
+- Raw export timestamp (UTC): `2026-04-05T13:53:40Z`
+- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260405_135340Z_full_refresh_20260405.json)
+- Sweep coverage: `3` variants x current configured problem sizes
 
 ## Key Measurements
-- At the largest tested problem size (`problem_size=1048576`), `std430` measured `46.837856 ms`, `3.582 GB/s` storage bandwidth, and `2.866 GB/s` logical payload bandwidth.
-- `std140` measured `53.234048 ms` and `4.412 GB/s` storage bandwidth, but only `2.521 GB/s` logical payload bandwidth; it was `1.137x` slower than `std430`.
-- `packed` eliminated alignment waste entirely, but still measured `61.083744 ms` and `2.197 GB/s` logical payload bandwidth, or `1.304x` slower than `std430`.
-- Layout overhead at the largest size was `75%` for `std140`, `25%` for `std430`, and `0%` for `packed` according to [the layout overview](./results/tables/std430_std140_packed_layout_overview.csv).
+- All `3` benchmark cases are represented in the refreshed export.
+- At the largest tested `problem_size=524288`, the fastest median GPU time came from `variant=std430` at `21.465152 ms`. Median GB/s: `3.126`. Median throughput: `24425077.446`.
 
 ## Artifact Links
 - [Raw benchmark export](./results/tables/benchmark_results.json)
-- [Current summary table](./results/tables/std430_std140_packed_summary.csv)
-- [Layout overview table](./results/tables/std430_std140_packed_layout_overview.csv)
-- [Relative-to-`std430` table](./results/tables/std430_std140_packed_relative_to_std430.csv)
-- [GPU time chart](./results/charts/std430_std140_packed_gpu_ms_vs_size.png)
-- [Logical GB/s chart](./results/charts/std430_std140_packed_logical_gbps_vs_size.png)
-- [Layout footprint chart](./results/charts/std430_std140_packed_layout_footprint.png)
+- [std430 std140 packed layout overview](./results/tables/std430_std140_packed_layout_overview.csv)
+- [std430 std140 packed multi run summary](./results/tables/std430_std140_packed_multi_run_summary.csv)
+- [std430 std140 packed relative to std430](./results/tables/std430_std140_packed_relative_to_std430.csv)
+- [std430 std140 packed runs index](./results/tables/std430_std140_packed_runs_index.csv)
+- [std430 std140 packed status overview](./results/tables/std430_std140_packed_status_overview.csv)
+- [std430 std140 packed summary](./results/tables/std430_std140_packed_summary.csv)
+- [benchmark summary](./results/charts/benchmark_summary.png)
+- [std430 std140 packed bandwidth efficiency vs size](./results/charts/std430_std140_packed_bandwidth_efficiency_vs_size.png)
+- [std430 std140 packed gbps vs size](./results/charts/std430_std140_packed_gbps_vs_size.png)
+- [std430 std140 packed gpu ms vs size](./results/charts/std430_std140_packed_gpu_ms_vs_size.png)
+- [std430 std140 packed layout footprint](./results/charts/std430_std140_packed_layout_footprint.png)
+- [std430 std140 packed logical gbps vs size](./results/charts/std430_std140_packed_logical_gbps_vs_size.png)
 
 ## Interpretation
-- `std430` remains the best latency choice in the full-refresh dataset.
-- `std140` can show a higher storage-bandwidth number because the metric counts padded bytes moved. Logical payload bandwidth and elapsed time are still the better measures of useful work here.
-- `packed` removes padding completely, but on this GPU it still loses in elapsed time for this kernel.
+- The fastest and slowest median GPU-time cases in the current focus set are separated by about `44.06%`, so the sweep does show a large spread on this GPU.
 
 ## Limitations
 - Results come from one GPU and driver stack.
-- The benchmark measures one kernel and one data layout contract; different shader code or device alignment rules could change the relative ordering.
+- Reported GB/s values follow each experiment's own metric definition; compare them within an experiment before comparing them across experiments.
+- The refreshed report covers the current sweep only; different sizes, kernels, drivers, or GPUs may shift the ranking.

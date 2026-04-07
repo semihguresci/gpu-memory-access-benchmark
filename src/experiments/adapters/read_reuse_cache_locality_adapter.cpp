@@ -1,6 +1,7 @@
 #include "experiments/experiment_contract.hpp"
 #include "experiments/read_reuse_cache_locality_experiment.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -10,7 +11,9 @@ bool run_read_reuse_cache_locality_experiment_adapter(VulkanContext& context, co
     ReadReuseCacheLocalityExperimentOutput experiment_output = run_read_reuse_cache_locality_experiment(
         context, runner,
         ReadReuseCacheLocalityExperimentConfig{
-            .max_buffer_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_scaled_budget(options.scratch_size_bytes, 2U, 5U)),
+            .scratch_size_bytes = options.scratch_size_bytes,
             .shader_path = "",
             .verbose_progress = options.verbose_progress,
         });

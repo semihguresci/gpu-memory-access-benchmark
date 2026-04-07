@@ -1,0 +1,57 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint logical_count;
+    uint items_per_thread;
+} push_constants;
+
+shared uint thread_totals[256];
+
+void main() {
+    const uint local_index = gl_LocalInvocationID.x;
+    const uint block_elements = gl_WorkGroupSize.x * push_constants.items_per_thread;
+    const uint block_base = gl_WorkGroupID.x * block_elements;
+
+    uint local_values[8];
+    for (uint item = 0u; item < 8u; ++item) {
+        local_values[item] = 0u;
+    }
+
+    for (uint item = 0u; item < push_constants.items_per_thread; ++item) {
+        const uint element_index = block_base + (local_index * push_constants.items_per_thread) + item;
+        const uint value = element_index < push_constants.logical_count ? input_buffer.values[element_index] : 0u;
+        local_values[item] = value + (item > 0u ? local_values[item - 1u] : 0u);
+    }
+
+    const uint thread_total = local_values[push_constants.items_per_thread - 1u];
+    thread_totals[local_index] = thread_total;
+    barrier();
+
+    for (uint offset = 1u; offset < gl_WorkGroupSize.x; offset <<= 1u) {
+        uint addend = 0u;
+        if (local_index >= offset) {
+            addend = thread_totals[local_index - offset];
+        }
+        barrier();
+        thread_totals[local_index] += addend;
+        barrier();
+    }
+
+    const uint thread_prefix = local_index == 0u ? 0u : thread_totals[local_index - 1u];
+    for (uint item = 0u; item < push_constants.items_per_thread; ++item) {
+        const uint element_index = block_base + (local_index * push_constants.items_per_thread) + item;
+        if (element_index < push_constants.logical_count) {
+            output_buffer.values[element_index] = thread_prefix + local_values[item];
+        }
+    }
+}

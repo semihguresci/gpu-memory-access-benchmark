@@ -1,36 +1,35 @@
 # Experiment 13 Results: Scatter Access Pattern
 
 ## Run Status
-- Benchmark status: latest `full_refresh_20260329` collection completed (`15/15` row correctness pass)
-- Test status: no additional tests were run during this report refresh
+- Benchmark status: latest `full_refresh_20260405` collection completed (`15/15` row correctness pass)
+- Test status: `ctest --test-dir build-tests-vs -C Release --output-on-failure` passed `37/37` after integration changes
 - GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --size 32M --label full_refresh_20260329`
+- Config: `--iterations 5 --warmup 2 --label full_refresh_20260405`
 - Validation layers: `disabled`
 - GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-03-29T14:42:12Z`
-- Latest collected run: [runs/nvidia_geforce_rtx_2080_super/20260329_144212Z_full_refresh_20260329.json](./runs/nvidia_geforce_rtx_2080_super/20260329_144212Z_full_refresh_20260329.json)
-- Sweep coverage: `3` variants x `1` logical size
+- Raw export timestamp (UTC): `2026-04-05T13:57:13Z`
+- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260405_135713Z_full_refresh_20260405.json)
+- Sweep coverage: `3` variants x current configured problem sizes
 
 ## Key Measurements
-- `unique_permutation` set the baseline at `48.199520 ms` and `2.088 GB/s` for `logical_elements=8388608`.
-- `random_collision_x4` stayed effectively tied and was slightly faster in this run at `47.079488 ms` and `2.138 GB/s`, a `2.32%` improvement versus the baseline median.
-- `clustered_hotset_32` measured `108.315712 ms` and `0.929 GB/s`, or `2.247x` slower than `unique_permutation`.
-- The contention metadata still explains the split: `random_collision_x4` used `active_target_count=2097152` with `max_expected_counter=4`, while `clustered_hotset_32` compressed traffic to `active_target_count=1048576` with `max_expected_counter=8`.
-- All three variants were fairly stable in this refresh: `unique_permutation` was steadiest at `p95/median=1.007x`, `clustered_hotset_32` stayed near `1.013x`, and `random_collision_x4` reached `1.020x`.
+- All `3` benchmark cases are represented in the refreshed export.
+- At the largest tested `logical_elements=4194304`, the fastest median GPU time came from `variant=random_collision_x4, distribution=random_collision_x4` at `24.503360 ms`. Median GB/s: `2.054`. Median throughput: `171172606.532`.
 
 ## Artifact Links
 - [Raw benchmark export](./results/tables/benchmark_results.json)
-- [Summary table](./results/tables/scatter_access_pattern_summary.csv)
-- [Relative table](./results/tables/scatter_access_pattern_relative.csv)
-- [Stability table](./results/tables/scatter_access_pattern_stability.csv)
-- [Contention table](./results/tables/scatter_access_pattern_contention.csv)
-- [Slowdown chart](./results/charts/scatter_access_pattern_slowdown_vs_unique_permutation.png)
-- [Stability chart](./results/charts/scatter_access_pattern_stability_ratio.png)
+- [scatter access pattern contention](./results/tables/scatter_access_pattern_contention.csv)
+- [scatter access pattern relative](./results/tables/scatter_access_pattern_relative.csv)
+- [scatter access pattern stability](./results/tables/scatter_access_pattern_stability.csv)
+- [scatter access pattern summary](./results/tables/scatter_access_pattern_summary.csv)
+- [scatter access pattern median gbps](./results/charts/scatter_access_pattern_median_gbps.png)
+- [scatter access pattern median gpu ms](./results/charts/scatter_access_pattern_median_gpu_ms.png)
+- [scatter access pattern slowdown vs unique permutation](./results/charts/scatter_access_pattern_slowdown_vs_unique_permutation.png)
+- [scatter access pattern stability ratio](./results/charts/scatter_access_pattern_stability_ratio.png)
 
 ## Interpretation
-- Spread-out collisions remained effectively tied with the unique-target baseline in the full-refresh run. Localized contention is still the dominant penalty source here, not mere target indirection.
-- The `GB/s` column in this experiment is a logical traffic proxy from the benchmark contract, not a hardware-counter measurement of physical atomic bandwidth. The timing comparison remains the primary result.
+- The fastest and slowest median GPU-time cases in the current focus set are separated by about `124.46%`, so the sweep does show a large spread on this GPU.
 
 ## Limitations
 - Results come from one GPU and driver stack.
-- No hardware counters or cache/atomic throughput counters were captured.
+- Reported GB/s values follow each experiment's own metric definition; compare them within an experiment before comparing them across experiments.
+- The refreshed report covers the current sweep only; different sizes, kernels, drivers, or GPUs may shift the ranking.

@@ -17,6 +17,7 @@
 
 namespace {
 
+using ExperimentMetrics::compute_effective_gbps;
 using ExperimentMetrics::compute_throughput_elements_per_second;
 
 constexpr const char* kExperimentId = "02_local_size_sweep";
@@ -106,15 +107,6 @@ std::vector<uint32_t> filter_problem_sizes_for_local_size(const std::vector<uint
     }
 
     return sizes;
-}
-
-double compute_effective_gbps(uint32_t problem_size, uint32_t dispatch_count, double dispatch_gpu_ms) {
-    if (!std::isfinite(dispatch_gpu_ms) || dispatch_gpu_ms <= 0.0) {
-        return 0.0;
-    }
-
-    const double bytes = static_cast<double>(problem_size) * static_cast<double>(dispatch_count) * sizeof(float);
-    return bytes / (dispatch_gpu_ms * 1.0e6);
 }
 
 std::string build_case_name(const std::string& variant_name, uint32_t local_size_x, uint32_t problem_size,
@@ -613,7 +605,8 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                     .end_to_end_ms = end_to_end_ms.count(),
                     .throughput =
                         compute_throughput_elements_per_second(problem_size, config.dispatch_count, dispatch_ms),
-                    .gbps = compute_effective_gbps(problem_size, config.dispatch_count, dispatch_ms),
+                    .gbps = compute_effective_gbps(problem_size, config.dispatch_count,
+                                                   static_cast<uint32_t>(sizeof(float)), dispatch_ms),
                     .correctness_pass = correctness,
                     .notes = notes,
                 });
@@ -688,6 +681,7 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                 std::string notes;
                 append_note(notes, "local_size_x=" + std::to_string(local_size_x));
                 append_note(notes, "group_count_x=" + std::to_string(group_count_x));
+                append_note(notes, "no_payload_bytes");
                 if (!upload_ok) {
                     append_note(notes, "upload_ms_non_finite");
                 }
@@ -719,9 +713,8 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                     .iteration = iteration,
                     .gpu_ms = dispatch_ms,
                     .end_to_end_ms = end_to_end_ms.count(),
-                    .throughput =
-                        compute_throughput_elements_per_second(problem_size, config.dispatch_count, dispatch_ms),
-                    .gbps = compute_effective_gbps(problem_size, config.dispatch_count, dispatch_ms),
+                    .throughput = 0.0,
+                    .gbps = 0.0,
                     .correctness_pass = correctness,
                     .notes = notes,
                 });

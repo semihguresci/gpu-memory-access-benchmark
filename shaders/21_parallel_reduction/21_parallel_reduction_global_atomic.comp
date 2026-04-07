@@ -1,0 +1,24 @@
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(set = 0, binding = 1, std430) buffer OutputBuffer {
+    uint value;
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+} pc;
+
+void main() {
+    const uint global_index = gl_GlobalInvocationID.x;
+    const uint total_invocations = gl_WorkGroupSize.x * gl_NumWorkGroups.x;
+
+    for (uint index = global_index; index < pc.element_count; index += total_invocations) {
+        atomicAdd(output_buffer.value, input_buffer.values[index]);
+    }
+}

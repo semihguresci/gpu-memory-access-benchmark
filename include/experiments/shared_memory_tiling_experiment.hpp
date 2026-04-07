@@ -10,6 +10,7 @@ class VulkanContext;
 
 struct SharedMemoryTilingExperimentConfig {
     std::size_t max_buffer_bytes = 0;
+    std::size_t scratch_size_bytes = 0;
     std::string direct_shader_path;
     std::string tiled_shader_path;
     bool verbose_progress = false;

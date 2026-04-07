@@ -29,11 +29,11 @@ constexpr uint32_t kSourceBaseValue = 0x01020304U;
 constexpr uint32_t kSentinelValue = 0xA5A5A5A5U;
 constexpr VkDeviceSize kBytesPerLogicalElement = static_cast<VkDeviceSize>(sizeof(uint32_t) * 3U);
 
-enum class GatherDistributionKind {
-    Identity,
-    BlockCoherent,
-    ClusteredRandom,
-    RandomPermutation,
+enum class GatherDistributionKind : std::uint8_t {
+    kIdentity,
+    kBlockCoherent,
+    kClusteredRandom,
+    kRandomPermutation,
 };
 
 struct GatherCaseDescriptor {
@@ -41,10 +41,10 @@ struct GatherCaseDescriptor {
 };
 
 constexpr std::array<GatherCaseDescriptor, 4> kCaseDescriptors = {{
-    {GatherDistributionKind::Identity},
-    {GatherDistributionKind::BlockCoherent},
-    {GatherDistributionKind::ClusteredRandom},
-    {GatherDistributionKind::RandomPermutation},
+    {GatherDistributionKind::kIdentity},
+    {GatherDistributionKind::kBlockCoherent},
+    {GatherDistributionKind::kClusteredRandom},
+    {GatherDistributionKind::kRandomPermutation},
 }};
 
 struct CaseBufferResources {
@@ -74,13 +74,13 @@ void append_note(std::string& notes, const std::string& note) {
 
 std::string make_variant_name(GatherDistributionKind kind, const GatherAccessPatternExperimentConfig& config) {
     switch (kind) {
-    case GatherDistributionKind::Identity:
+    case GatherDistributionKind::kIdentity:
         return "identity";
-    case GatherDistributionKind::BlockCoherent:
+    case GatherDistributionKind::kBlockCoherent:
         return "block_coherent_" + std::to_string(config.block_size);
-    case GatherDistributionKind::ClusteredRandom:
+    case GatherDistributionKind::kClusteredRandom:
         return "clustered_random_" + std::to_string(config.cluster_size);
-    case GatherDistributionKind::RandomPermutation:
+    case GatherDistributionKind::kRandomPermutation:
         return "random_permutation";
     }
 
@@ -358,9 +358,9 @@ std::vector<uint32_t> make_index_reference(GatherDistributionKind kind, uint32_t
 
     std::mt19937 engine(config.pattern_seed);
     switch (kind) {
-    case GatherDistributionKind::Identity:
+    case GatherDistributionKind::kIdentity:
         return indices;
-    case GatherDistributionKind::BlockCoherent: {
+    case GatherDistributionKind::kBlockCoherent: {
         std::vector<uint32_t> block_starts;
         const uint32_t block_size = std::max(1U, config.block_size);
         for (uint32_t block_start = 0U; block_start < logical_count; block_start += block_size) {
@@ -378,7 +378,7 @@ std::vector<uint32_t> make_index_reference(GatherDistributionKind kind, uint32_t
         }
         return indices;
     }
-    case GatherDistributionKind::ClusteredRandom: {
+    case GatherDistributionKind::kClusteredRandom: {
         const uint32_t cluster_size = std::max(1U, config.cluster_size);
         std::vector<uint32_t> cluster_starts;
         for (uint32_t cluster_start = 0U; cluster_start < logical_count; cluster_start += cluster_size) {
@@ -403,7 +403,7 @@ std::vector<uint32_t> make_index_reference(GatherDistributionKind kind, uint32_t
         }
         return indices;
     }
-    case GatherDistributionKind::RandomPermutation:
+    case GatherDistributionKind::kRandomPermutation:
         std::shuffle(indices.begin(), indices.end(), engine);
         return indices;
     }
@@ -473,7 +473,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
     }
 
     fill_source_values(src_values, logical_count);
-    std::copy(index_reference.begin(), index_reference.end(), index_values);
+    std::ranges::copy(index_reference, index_values);
 
     const std::size_t timed_iterations = static_cast<std::size_t>(std::max(0, runner.timed_iterations()));
     std::vector<double> dispatch_samples;
@@ -523,8 +523,9 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
-        record_case_run(notes, variant_name, config, logical_count, physical_span_bytes, physical_span_bytes,
-                        group_count_x, correctness_pass, dispatch_ok);
+        record_case_run(notes, variant_name, config, logical_count, physical_span_bytes,
+                        static_cast<VkDeviceSize>(config.max_buffer_bytes), group_count_x, correctness_pass,
+                        dispatch_ok);
 
         if (config.verbose_progress) {
             std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/" << runner.timed_iterations()
