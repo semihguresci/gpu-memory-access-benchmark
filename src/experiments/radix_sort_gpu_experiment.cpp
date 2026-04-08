@@ -653,21 +653,31 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
 }
 
 std::vector<uint32_t> build_problem_sizes(std::size_t max_buffer_bytes, uint32_t max_dispatch_groups_x) {
-    // Each problem requires 5 buffers: ping, pong, hist, block_prefix (radix_size * num_blocks), digit_starts.
-    // For the maximum radix size (256) and max num_blocks, the histogram buffers dominate at
-    // 256 * num_blocks * 4 bytes each. We keep the budget simple: require at least 5 * keys_bytes.
-    const uint64_t budget_per_element = 5ULL * sizeof(uint32_t);
-    const uint64_t max_elements_from_budget = static_cast<uint64_t>(max_buffer_bytes) / budget_per_element;
+    // `max_buffer_bytes` is a per-buffer budget. Validate each candidate against
+    // the largest individual scratch buffers required by the radix sort:
+    // - ping/pong key buffers: element_count * sizeof(uint32_t)
+    // - histogram / block_prefix buffers: radix_size * num_blocks * sizeof(uint32_t)
+    // The fixed-size digit_starts buffer is smaller than the histogram buffers for
+    // the same radix size, so it is covered by the histogram check.
+    constexpr uint64_t kMaxRadixSize = 256ULL;
+    const uint64_t max_buffer_bytes_u64 = static_cast<uint64_t>(max_buffer_bytes);
     const uint64_t max_elements_from_dispatch =
         static_cast<uint64_t>(max_dispatch_groups_x) * static_cast<uint64_t>(kWorkgroupSize);
     const uint64_t max_elements_from_blocks = static_cast<uint64_t>(kMaxBlocks) * kWorkgroupSize;
     const uint64_t max_elements =
-        std::min({max_elements_from_budget, max_elements_from_dispatch, max_elements_from_blocks,
-                  static_cast<uint64_t>(UINT32_MAX)});
+        std::min({max_elements_from_dispatch, max_elements_from_blocks, static_cast<uint64_t>(UINT32_MAX)});
 
     std::vector<uint32_t> sizes;
     for (const uint32_t candidate : kCandidateProblemSizes) {
-        if (candidate <= max_elements && (candidate % kWorkgroupSize == 0U)) {
+        if (candidate > max_elements || (candidate % kWorkgroupSize != 0U)) {
+            continue;
+        }
+
+        const uint64_t key_buffer_bytes = static_cast<uint64_t>(candidate) * sizeof(uint32_t);
+        const uint64_t num_blocks = static_cast<uint64_t>(candidate) / static_cast<uint64_t>(kWorkgroupSize);
+        const uint64_t histogram_buffer_bytes = kMaxRadixSize * num_blocks * sizeof(uint32_t);
+
+        if (key_buffer_bytes <= max_buffer_bytes_u64 && histogram_buffer_bytes <= max_buffer_bytes_u64) {
             sizes.push_back(candidate);
         }
     }
