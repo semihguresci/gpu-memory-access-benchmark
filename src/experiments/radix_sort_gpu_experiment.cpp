@@ -29,13 +29,16 @@ constexpr uint32_t kDispatchCount = 1U;
 // Candidate problem sizes (in elements). The scan kernel launches a single
 // workgroup of 256 threads that iterates over all blocks, so num_blocks
 // (= elements / kWorkgroupSize) must fit within the sequential loop budget.
-// We cap at 64K elements (256 blocks) to keep the single-workgroup scan fast
-// while still exercising meaningful problem sizes.
+// This benchmark currently samples sizes up to 64K elements (256 blocks) to
+// keep the single-workgroup scan fast while still exercising meaningful
+// problem sizes.
 constexpr std::array<uint32_t, 5> kCandidateProblemSizes = {
     4096U, 8192U, 16384U, 32768U, 65536U,
 };
 
-// Maximum number of blocks the single-workgroup scan can handle.
+// Implementation limit for the single-workgroup scan used by
+// build_problem_sizes(): up to 1024 blocks (262144 elements at the current
+// workgroup size).
 constexpr uint32_t kMaxBlocks = 1024U;
 
 enum class VariantKind : uint32_t {
