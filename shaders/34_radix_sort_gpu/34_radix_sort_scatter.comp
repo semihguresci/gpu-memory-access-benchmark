@@ -1,0 +1,89 @@
+#version 450
+
+// Scatter pass for radix sort.
+// Each workgroup scatters its 256 elements to their globally-sorted positions.
+//
+// Output position for element i (in block b, with digit d, local rank r):
+//   output_pos = digit_starts[d] + block_prefix[d * num_blocks + b] + r
+//
+// Local rank r is computed with a shared-memory count + prefix-scan + atomic-increment:
+//   1. Count: each thread atomicAdds 1 to local_counts[digit]  (gives per-block counts)
+//   2. Scan:  inclusive prefix scan over local_counts
+//   3. Rank:  each thread does atomicAdd on local_prefix[digit] (initialised to exclusive prefix)
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer KeysIn {
+    uint values[];
+} keys_in;
+
+layout(std430, binding = 1) buffer KeysOut {
+    uint values[];
+} keys_out;
+
+layout(std430, binding = 2) readonly buffer BlockPrefix {
+    uint values[];
+} block_prefix; // block_prefix[digit * num_blocks + block]
+
+layout(std430, binding = 3) readonly buffer DigitStarts {
+    uint values[];
+} digit_starts; // digit_starts[digit]
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint num_blocks;
+    uint bit_offset;
+    uint radix_mask; // 0xFF for 8-bit, 0x0F for 4-bit
+} push_constants;
+
+shared uint local_counts[256]; // digit histogram for this block
+shared uint local_prefix[256]; // exclusive prefix for rank assignment
+
+void main() {
+    const uint local_id = gl_LocalInvocationID.x;
+    const uint block_id = gl_WorkGroupID.x;
+    const uint global_id = gl_GlobalInvocationID.x;
+
+    // Phase 1: clear and count.
+    local_counts[local_id] = 0u;
+    barrier();
+
+    uint my_key = 0u;
+    uint my_digit = 0u;
+    const bool in_bounds = global_id < push_constants.element_count;
+
+    if (in_bounds) {
+        my_key = keys_in.values[global_id];
+        my_digit = (my_key >> push_constants.bit_offset) & push_constants.radix_mask;
+        atomicAdd(local_counts[my_digit], 1u);
+    }
+
+    barrier();
+
+    // Phase 2: inclusive prefix scan over local_counts.
+    for (uint offset = 1u; offset < 256u; offset <<= 1u) {
+        const uint addend = (local_id >= offset) ? local_counts[local_id - offset] : 0u;
+        barrier();
+        local_counts[local_id] += addend;
+        barrier();
+    }
+
+    // Phase 3: convert to exclusive prefix, store in local_prefix for rank assignment.
+    local_prefix[local_id] = (local_id == 0u) ? 0u : local_counts[local_id - 1u];
+    barrier();
+
+    // Phase 4: each in-bounds thread atomically claims its local rank.
+    uint local_rank = 0u;
+    if (in_bounds) {
+        local_rank = atomicAdd(local_prefix[my_digit], 1u);
+    }
+
+    barrier();
+
+    // Phase 5: scatter.
+    if (in_bounds) {
+        const uint global_start = digit_starts.values[my_digit];
+        const uint block_start = block_prefix.values[my_digit * push_constants.num_blocks + block_id];
+        keys_out.values[global_start + block_start + local_rank] = my_key;
+    }
+}

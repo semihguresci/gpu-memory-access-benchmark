@@ -1,0 +1,62 @@
+#version 450
+
+// Prefix-scan pass for radix sort.
+// Launches with exactly 1 workgroup of 256 threads.
+// Thread d (0..radix_size-1) sequentially scans across all num_blocks
+// for digit d, writing per-block exclusive prefixes into block_prefix.
+// After that, a Blelloch inclusive scan over digit_totals shared memory
+// computes per-digit global starting offsets (exclusive), written to digit_starts.
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer Histogram {
+    uint values[];
+} histogram; // histogram[digit * num_blocks + block]
+
+layout(std430, binding = 1) buffer BlockPrefix {
+    uint values[];
+} block_prefix; // block_prefix[digit * num_blocks + block]
+
+layout(std430, binding = 2) buffer DigitStarts {
+    uint values[];
+} digit_starts; // digit_starts[digit]
+
+layout(push_constant) uniform PushConstants {
+    uint num_blocks;
+    uint radix_size; // 256 for 8-bit, 16 for 4-bit
+} push_constants;
+
+shared uint digit_totals[256];
+
+void main() {
+    const uint d = gl_LocalInvocationID.x;
+
+    // Phase 1: each digit thread d scans across blocks, writing exclusive per-block prefix.
+    if (d < push_constants.radix_size) {
+        uint running = 0u;
+        for (uint b = 0u; b < push_constants.num_blocks; ++b) {
+            block_prefix.values[d * push_constants.num_blocks + b] = running;
+            running += histogram.values[d * push_constants.num_blocks + b];
+        }
+        digit_totals[d] = running;
+    } else {
+        digit_totals[d] = 0u;
+    }
+
+    barrier();
+
+    // Phase 2: Blelloch inclusive prefix scan across all 256 shared slots.
+    // Entries at d >= radix_size start at 0 so they do not corrupt lower entries
+    // (scan adds from lower index to higher, never backwards).
+    for (uint offset = 1u; offset < 256u; offset <<= 1u) {
+        const uint addend = (d >= offset) ? digit_totals[d - offset] : 0u;
+        barrier();
+        digit_totals[d] += addend;
+        barrier();
+    }
+
+    // Phase 3: convert inclusive to exclusive and write digit start positions.
+    if (d < push_constants.radix_size) {
+        digit_starts.values[d] = (d == 0u) ? 0u : digit_totals[d - 1u];
+    }
+}

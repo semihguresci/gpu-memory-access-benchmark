@@ -1,0 +1,38 @@
+#version 450
+
+// Occupancy modeling: low shared-memory variant.
+// Uses 256 x uint (1 KB) of shared memory so many workgroups can
+// co-reside on a single compute unit.
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+} push_constants;
+
+// 256 uints = 1 KB of shared memory per workgroup.
+shared uint scratch[256];
+
+void main() {
+    const uint local_id = gl_LocalInvocationID.x;
+    const uint global_id = gl_GlobalInvocationID.x;
+
+    scratch[local_id] = (global_id < push_constants.element_count) ? input_buffer.values[global_id] : 0u;
+    barrier();
+
+    // Simple transformation through shared memory to prevent dead-code elimination.
+    const uint rotated = (local_id + 1u) % 256u;
+    const uint result = scratch[rotated] ^ (scratch[local_id] * 1664525u + 1013904223u);
+
+    if (global_id < push_constants.element_count) {
+        output_buffer.values[global_id] = result;
+    }
+}

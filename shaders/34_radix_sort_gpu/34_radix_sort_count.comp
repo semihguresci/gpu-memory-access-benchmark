@@ -1,0 +1,49 @@
+#version 450
+
+// Per-block digit histogram for an 8-bit or 4-bit radix sort pass.
+// Each workgroup covers exactly WG_SIZE (256) elements of the input key array
+// and accumulates counts into the shared local_counts array, then atomically
+// writes those counts into the global histogram at layout
+//   histogram[digit * num_blocks + block_id].
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer KeysIn {
+    uint values[];
+} keys_in;
+
+layout(std430, binding = 1) buffer Histogram {
+    uint values[];
+} histogram; // size: radix_size * num_blocks
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint num_blocks;
+    uint bit_offset;
+    uint radix_size; // 256 for 8-bit, 16 for 4-bit
+    uint radix_mask; // 0xFF for 8-bit, 0x0F for 4-bit
+} push_constants;
+
+shared uint local_counts[256];
+
+void main() {
+    const uint local_id = gl_LocalInvocationID.x;
+    const uint block_id = gl_WorkGroupID.x;
+    const uint global_id = gl_GlobalInvocationID.x;
+
+    local_counts[local_id] = 0u;
+    barrier();
+
+    if (global_id < push_constants.element_count) {
+        const uint digit = (keys_in.values[global_id] >> push_constants.bit_offset) & push_constants.radix_mask;
+        atomicAdd(local_counts[digit], 1u);
+    }
+
+    barrier();
+
+    // Write per-digit counts to global histogram (column-major: digit * num_blocks + block).
+    // Only the first radix_size threads are active here; others are idle.
+    if (local_id < push_constants.radix_size) {
+        histogram.values[local_id * push_constants.num_blocks + block_id] = local_counts[local_id];
+    }
+}

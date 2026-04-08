@@ -1,0 +1,46 @@
+#version 450
+
+// Occupancy modeling: medium shared-memory variant.
+// Uses 2048 x uint (8 KB) of shared memory, reducing the number of
+// workgroups that can co-reside on a single compute unit.
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+} push_constants;
+
+// 2048 uints = 8 KB of shared memory per workgroup.
+shared uint scratch[2048];
+
+void main() {
+    const uint local_id = gl_LocalInvocationID.x;
+    const uint global_id = gl_GlobalInvocationID.x;
+    const uint wg_base = gl_WorkGroupID.x * 2048u;
+
+    // Each thread fills 8 entries of the 2048-element scratch tile.
+    for (uint slot = local_id; slot < 2048u; slot += 256u) {
+        const uint src = wg_base + slot;
+        scratch[slot] = (src < push_constants.element_count) ? input_buffer.values[src] : 0u;
+    }
+    barrier();
+
+    // Transformation that touches different scratch positions to prevent elimination.
+    uint acc = 0u;
+    for (uint slot = local_id; slot < 2048u; slot += 256u) {
+        const uint peer = (slot + 256u) % 2048u;
+        acc = scratch[peer] ^ (acc * 1664525u + 1013904223u);
+    }
+
+    if (global_id < push_constants.element_count) {
+        output_buffer.values[global_id] = acc;
+    }
+}
