@@ -24,11 +24,12 @@ shared uint scratch[8192];
 void main() {
     const uint local_id = gl_LocalInvocationID.x;
     const uint global_id = gl_GlobalInvocationID.x;
-    const uint wg_base = gl_WorkGroupID.x * 8192u;
+    const uint wg_output_base = gl_WorkGroupID.x * 256u;
 
-    // Each thread fills 32 entries of the 8192-element scratch tile.
+    // Each workgroup writes a 256-element output span, so preload scratch from that
+    // same span while still occupying the full 8192-element shared-memory tile.
     for (uint slot = local_id; slot < 8192u; slot += 256u) {
-        const uint src = wg_base + slot;
+        const uint src = wg_output_base + (slot % 256u);
         scratch[slot] = (src < push_constants.element_count) ? input_buffer.values[src] : 0u;
     }
     barrier();
