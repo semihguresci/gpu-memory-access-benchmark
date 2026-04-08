@@ -598,6 +598,42 @@
       "plan_title": "2D Locality and Transpose Study",
       "plan_path": "experiment_plans/33_two_dimensional_locality_transpose_study.md",
       "plan_description": "Row-major copy versus naive and tiled transpose access patterns."
+    },
+    {
+      "id": "34_radix_sort_gpu",
+      "display_name": "Radix Sort on GPU",
+      "category": "parallel_primitives",
+      "adapter_symbol": "run_radix_sort_gpu_experiment_adapter",
+      "enabled": true,
+      "source": "src/experiments/radix_sort_gpu_experiment.cpp",
+      "adapter_source": "src/experiments/adapters/radix_sort_gpu_adapter.cpp",
+      "default_size": "16M",
+      "analysis_script": "analyze_radix_sort_gpu.py",
+      "has_plot_script": true,
+      "supports_skip_current": true,
+      "plot_after_skip_current": true,
+      "docs_group": "advanced",
+      "plan_title": "Radix Sort on GPU",
+      "plan_path": "advanced_plans/01_radix_sort_gpu.md",
+      "plan_description": "Multi-pass GPU radix sort: 8-bit vs 4-bit digit width variants, key-only."
+    },
+    {
+      "id": "35_occupancy_modeling",
+      "display_name": "Occupancy Modeling",
+      "category": "compute_throughput",
+      "adapter_symbol": "run_occupancy_modeling_experiment_adapter",
+      "enabled": true,
+      "source": "src/experiments/occupancy_modeling_experiment.cpp",
+      "adapter_source": "src/experiments/adapters/occupancy_modeling_adapter.cpp",
+      "default_size": "32M",
+      "analysis_script": "analyze_occupancy_modeling.py",
+      "has_plot_script": true,
+      "supports_skip_current": true,
+      "plot_after_skip_current": true,
+      "docs_group": "advanced",
+      "plan_title": "Occupancy Modeling Against Vendor Guidance",
+      "plan_path": "advanced_plans/08_occupancy_modeling.md",
+      "plan_description": "Low, medium, and high shared-memory pressure variants to model occupancy effects on throughput."
     }
   ]
 }
