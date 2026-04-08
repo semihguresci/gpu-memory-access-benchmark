@@ -240,9 +240,10 @@ void update_scan_descriptor_set(VulkanContext& context, const BufferResources& b
 void update_scatter_descriptor_set(VulkanContext& context, VkBuffer keys_src, VkDeviceSize keys_src_size,
                                    const BufferResources& buffers, VkDescriptorSet descriptor_set) {
     const VkDescriptorBufferInfo src_info{keys_src, 0U, keys_src_size};
+    const bool src_is_ping = (keys_src == buffers.keys_ping.buffer);
     const VkDescriptorBufferInfo dst_info{
-        (keys_src == buffers.keys_ping.buffer) ? buffers.keys_pong.buffer : buffers.keys_ping.buffer, 0U,
-        buffers.keys_ping.size};
+        src_is_ping ? buffers.keys_pong.buffer : buffers.keys_ping.buffer, 0U,
+        src_is_ping ? buffers.keys_pong.size : buffers.keys_ping.size};
     const VkDescriptorBufferInfo prefix_info{buffers.block_prefix.buffer, 0U, buffers.block_prefix.size};
     const VkDescriptorBufferInfo starts_info{buffers.digit_starts.buffer, 0U, buffers.digit_starts.size};
     VulkanComputeUtils::update_descriptor_set_buffers(

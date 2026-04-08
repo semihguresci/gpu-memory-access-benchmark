@@ -247,6 +247,89 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     }
 }
 
+// CPU reference implementations matching the GPU shaders.
+// We validate the first workgroup's output (elements 0..min(255, element_count-1)).
+// Input reads beyond element_count return 0 (matching the GPU bounds check).
+
+uint32_t safe_read(const uint32_t* input, uint32_t index, uint32_t element_count) {
+    return (index < element_count) ? input[index] : 0U;
+}
+
+// Matches 35_occupancy_low_smem.comp:
+//   scratch[local] = input[global];
+//   result = scratch[(local+1)%256] ^ (scratch[local] * 1664525 + 1013904223)
+bool validate_low_smem(const uint32_t* input, const uint32_t* output, uint32_t element_count) {
+    const uint32_t wg_base = 0U;
+    for (uint32_t local = 0U; local < std::min(kWorkgroupSize, element_count); ++local) {
+        const uint32_t rotated = (local + 1U) % kWorkgroupSize;
+        const uint32_t my_val = safe_read(input, wg_base + local, element_count);
+        const uint32_t peer_val = safe_read(input, wg_base + rotated, element_count);
+        const uint32_t expected = peer_val ^ (my_val * 1664525U + 1013904223U);
+        if (output[local] != expected) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Matches 35_occupancy_medium_smem.comp (scratch size = 2048):
+//   scratch[slot] = input[wg_base + slot] for slot in [local, local+256, ..., < 2048]
+//   acc = 0; for slot in [local, local+256, ..., <2048]: peer=(slot+256)%2048; acc=scratch[peer]^(acc*1664525+1013904223)
+bool validate_medium_smem(const uint32_t* input, const uint32_t* output, uint32_t element_count) {
+    constexpr uint32_t kScratchSize = 2048U;
+    const uint32_t wg_base = 0U;
+    std::vector<uint32_t> scratch(kScratchSize);
+    for (uint32_t slot = 0U; slot < kScratchSize; ++slot) {
+        scratch[slot] = safe_read(input, wg_base + slot, element_count);
+    }
+    for (uint32_t local = 0U; local < std::min(kWorkgroupSize, element_count); ++local) {
+        uint32_t acc = 0U;
+        for (uint32_t slot = local; slot < kScratchSize; slot += kWorkgroupSize) {
+            const uint32_t peer = (slot + kWorkgroupSize) % kScratchSize;
+            acc = scratch[peer] ^ (acc * 1664525U + 1013904223U);
+        }
+        if (output[local] != acc) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Matches 35_occupancy_high_smem.comp (scratch size = 8192):
+bool validate_high_smem(const uint32_t* input, const uint32_t* output, uint32_t element_count) {
+    constexpr uint32_t kScratchSize = 8192U;
+    const uint32_t wg_base = 0U;
+    std::vector<uint32_t> scratch(kScratchSize);
+    for (uint32_t slot = 0U; slot < kScratchSize; ++slot) {
+        scratch[slot] = safe_read(input, wg_base + slot, element_count);
+    }
+    for (uint32_t local = 0U; local < std::min(kWorkgroupSize, element_count); ++local) {
+        uint32_t acc = 0U;
+        for (uint32_t slot = local; slot < kScratchSize; slot += kWorkgroupSize) {
+            const uint32_t peer = (slot + kWorkgroupSize) % kScratchSize;
+            acc = scratch[peer] ^ (acc * 1664525U + 1013904223U);
+        }
+        if (output[local] != acc) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool validate_output(const VariantDescriptor& descriptor, const uint32_t* input, const uint32_t* output,
+                     uint32_t element_count) {
+    switch (descriptor.kind) {
+    case VariantKind::LowSmem:
+        return validate_low_smem(input, output, element_count);
+    case VariantKind::MediumSmem:
+        return validate_medium_smem(input, output, element_count);
+    case VariantKind::HighSmem:
+        return validate_high_smem(input, output, element_count);
+    default:
+        return false;
+    }
+}
+
 bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const BufferResources& buffers,
               const PipelineResources& pipeline_resources, const VariantDescriptor& descriptor, uint32_t element_count,
               OccupancyModelingExperimentOutput& output, bool verbose_progress) {
@@ -273,6 +356,22 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         }
     }
 
+    // Run one pre-validation dispatch (validates first workgroup's output against CPU reference).
+    bool first_dispatch_correct = false;
+    {
+        const double ms = run_dispatch(context, pipeline_resources, element_count);
+        if (std::isfinite(ms)) {
+            const auto* output_values = static_cast<const uint32_t*>(buffers.output_mapped_ptr);
+            if (output_values != nullptr) {
+                first_dispatch_correct = validate_output(descriptor, input_values, output_values, element_count);
+            }
+            if (!first_dispatch_correct) {
+                std::cerr << "[" << kExperimentId << "] Correctness check failed for variant="
+                          << descriptor.variant_name << " n=" << element_count << "\n";
+            }
+        }
+    }
+
     for (int iteration = 0; iteration < runner.timed_iterations(); ++iteration) {
         const auto start = std::chrono::high_resolution_clock::now();
         const double dispatch_ms = run_dispatch(context, pipeline_resources, element_count);
@@ -280,8 +379,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         const std::chrono::duration<double, std::milli> e2e_ms = end - start;
 
         const bool dispatch_ok = std::isfinite(dispatch_ms);
-        // Correctness: the output is a deterministic transform; always mark true if dispatch succeeded.
-        const bool correctness_pass = dispatch_ok;
+        const bool correctness_pass = dispatch_ok && first_dispatch_correct;
         output.all_points_correct = output.all_points_correct && correctness_pass;
         dispatch_samples.push_back(dispatch_ms);
 

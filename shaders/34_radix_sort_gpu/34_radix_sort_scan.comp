@@ -26,6 +26,11 @@ layout(push_constant) uniform PushConstants {
     uint radix_size; // 256 for 8-bit, 16 for 4-bit
 } push_constants;
 
+// Note: sized for the maximum radix size (8-bit, 256 entries) so this shader
+// handles both the 8bit_4pass and 4bit_8pass variants via push_constants.radix_size.
+// For 4-bit variants, entries 16-255 are initialised to 0 and contribute 0 to
+// the scan, leaving entries 0-15 correct. The extra shared-memory allocation is a
+// deliberate trade-off to keep one shader for both digit widths.
 shared uint digit_totals[256];
 
 void main() {

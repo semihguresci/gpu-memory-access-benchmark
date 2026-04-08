@@ -36,7 +36,11 @@ layout(push_constant) uniform PushConstants {
     uint radix_mask; // 0xFF for 8-bit, 0x0F for 4-bit
 } push_constants;
 
-shared uint local_counts[256]; // digit histogram for this block
+shared uint local_counts[256]; // shared histogram for computing local rank
+// Note: sized for the maximum radix size (8-bit, 256 entries) so this shader
+// handles both the 8bit_4pass and 4bit_8pass variants via push_constants.radix_mask.
+// For 4-bit variants, only entries 0-15 are used; the rest remain 0 and do not
+// affect correctness but do consume the full shared-memory allocation.
 shared uint local_prefix[256]; // exclusive prefix for rank assignment
 
 void main() {
