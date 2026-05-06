@@ -1,3 +1,8 @@
+// Experiment 09: Vec3 Vec4 Padding Costs
+// Shader role: split scalars.
+// What this experiment tests: vec3 padding, vec4 packing, and split scalars.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;

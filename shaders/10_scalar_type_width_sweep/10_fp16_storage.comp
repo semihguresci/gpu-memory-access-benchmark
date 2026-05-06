@@ -1,3 +1,8 @@
+// Experiment 10: Scalar Type Width Sweep
+// Shader role: fp16 storage.
+// What this experiment tests: storage width versus conversion cost.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;

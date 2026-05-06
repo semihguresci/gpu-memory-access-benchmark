@@ -1,10 +1,10 @@
-﻿# Experiment 19: Branch Divergence
+# Experiment 19: Branch Divergence
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/19_branch_divergence.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

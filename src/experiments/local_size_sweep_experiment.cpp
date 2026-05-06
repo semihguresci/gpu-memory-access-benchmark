@@ -22,7 +22,7 @@ using ExperimentMetrics::compute_throughput_elements_per_second;
 
 constexpr const char* kExperimentId = "02_local_size_sweep";
 constexpr uint32_t kMinProblemPower = 14;
-constexpr uint32_t kMaxProblemPower = 24;
+constexpr uint32_t kMaxProblemPower = 27;
 constexpr float kWriteSentinel = -1.0F;
 constexpr float kNoopSentinel = -2.0F;
 constexpr std::array<uint32_t, 6> kLocalSizeCandidates = {32U, 64U, 128U, 256U, 512U, 1024U};
@@ -82,13 +82,17 @@ bool is_local_size_candidate_legal(const VkPhysicalDeviceProperties& device_prop
 
 std::vector<uint32_t> make_base_problem_sizes(uint32_t max_elements) {
     std::vector<uint32_t> sizes;
-    sizes.reserve(kMaxProblemPower - kMinProblemPower + 1U);
+    sizes.reserve(kMaxProblemPower - kMinProblemPower + 2U);
 
     for (uint32_t power = kMinProblemPower; power <= kMaxProblemPower; ++power) {
         const uint64_t value = 1ULL << power;
         if (value <= max_elements && value <= std::numeric_limits<uint32_t>::max()) {
             sizes.push_back(static_cast<uint32_t>(value));
         }
+    }
+
+    if (max_elements > 0U && (sizes.empty() || sizes.back() != max_elements)) {
+        sizes.push_back(max_elements);
     }
 
     return sizes;

@@ -62,10 +62,10 @@ struct ValidationStats {
 };
 
 std::vector<uint32_t> make_element_counts(uint32_t max_elements) {
-    const std::array<uint32_t, 8> base_counts = {131072U,  262144U,  524288U,  1048576U,
-                                                 2097152U, 4194304U, 8388608U, 16777216U};
+    const std::array<uint32_t, 8> base_counts = {1310720U,  2621440U,  5242880U,  10485760U,
+                                                 20971520U, 41943040U, 83886080U, 167772160U};
     std::vector<uint32_t> output;
-    output.reserve(base_counts.size() + 4U);
+    output.reserve(base_counts.size() + 5U);
 
     for (const uint32_t value : base_counts) {
         if (value <= max_elements) {
@@ -82,7 +82,7 @@ std::vector<uint32_t> make_element_counts(uint32_t max_elements) {
         }
     }
 
-    if (output.empty() && max_elements > 0U) {
+    if (max_elements > 0U && (output.empty() || output.back() != max_elements)) {
         output.push_back(max_elements);
     }
 

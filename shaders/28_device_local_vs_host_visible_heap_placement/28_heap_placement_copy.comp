@@ -1,3 +1,8 @@
+// Experiment 28: Device Local Vs Host Visible Heap Placement
+// Shader role: heap placement copy.
+// What this experiment tests: heap placement rather than shader logic.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;

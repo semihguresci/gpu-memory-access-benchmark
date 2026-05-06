@@ -1,0 +1,85 @@
+// Experiment 41: Subgroup Operations Study
+// Shader role: main path.
+// What this experiment tests: subgroup operations versus shared-memory coordination.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
+#version 450
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Contract: one input operand per invocation. Both the shared-memory baseline
+// and subgroup-intrinsic path read the same stream for apples-to-apples data.
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+// Contract: one per-invocation aggregate result. The host compares this output
+// across variants to ensure the subgroup path matches the shared baseline.
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint variant_mode;
+    uint reserved0;
+    uint reserved1;
+} push_constants;
+
+shared uint shared_values[256];
+shared uint shared_counts[256];
+
+uint shared_baseline_result(uint local_index, uint input_value) {
+    const uint subgroup_size = gl_SubgroupSize;
+    const uint lane_in_subgroup = gl_SubgroupInvocationID;
+    shared_values[local_index] = input_value;
+    shared_counts[local_index] = ((input_value & 1u) != 0u) ? 1u : 0u;
+    barrier();
+
+    // Shared-memory baseline: reduce cooperatively inside each subgroup-sized
+    // region. This keeps the arithmetic volume close to the subgroup intrinsic
+    // path while still measuring explicit shared-memory coordination.
+    for (uint stride = 1u; stride < subgroup_size; stride <<= 1u) {
+        const uint partner_lane = lane_in_subgroup + stride;
+        if ((lane_in_subgroup % (stride << 1u)) == 0u && partner_lane < subgroup_size) {
+            const uint partner_index = local_index + stride;
+            shared_values[local_index] += shared_values[partner_index];
+            shared_counts[local_index] += shared_counts[partner_index];
+        }
+        barrier();
+    }
+
+    const uint subgroup_base = gl_SubgroupID * subgroup_size;
+    const uint subgroup_sum = shared_values[subgroup_base];
+    const uint active_count = shared_counts[subgroup_base];
+    return subgroup_sum + (active_count * 17u);
+}
+
+uint subgroup_intrinsic_result(uint input_value) {
+    const uint subgroup_sum = subgroupAdd(input_value);
+    const uvec4 ballot_mask = subgroupBallot((input_value & 1u) != 0u);
+    const uint active_count = subgroupBallotBitCount(ballot_mask);
+    return subgroup_sum + (active_count * 17u);
+}
+
+void main() {
+    const uint global_index = gl_GlobalInvocationID.x;
+    const uint local_index = gl_LocalInvocationID.x;
+    const bool in_bounds = global_index < push_constants.element_count;
+    const uint input_value = in_bounds ? input_buffer.values[global_index] : 0u;
+
+    uint result_value = 0u;
+    if (push_constants.variant_mode == 0u) {
+        result_value = shared_baseline_result(local_index, input_value);
+    } else {
+        result_value = subgroup_intrinsic_result(input_value);
+    }
+
+    if (in_bounds) {
+        output_buffer.values[global_index] = result_value;
+    }
+}

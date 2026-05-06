@@ -1,0 +1,193 @@
+// Experiment 39: Tiled Light Assignment
+// Shader role: main path.
+// What this experiment tests: tiled light-assignment strategy.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Contract: one light record per entry. xy is the normalized center and z is
+// the radius used by all assignment modes when testing tile overlap.
+layout(std430, binding = 0) readonly buffer LightBuffer {
+    vec4 values[];
+} light_buffer;
+
+// Contract: one counter per screen tile. Different modes populate it through
+// atomics, serial tile walks, or shared-memory reduction, but the final layout
+// is always tile_count_x * tile_count_y contiguous uints.
+layout(std430, binding = 1) buffer TileCountBuffer {
+    uint values[];
+} tile_count_buffer;
+
+// Contract: stats_buffer[0] records total light-tile overlaps; stats_buffer[1]
+// mirrors assignment_mode so readback/analysis can sanity-check the row.
+layout(std430, binding = 2) buffer StatsBuffer {
+    uint values[];
+} stats_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint light_count;
+    uint tile_count_x;
+    uint tile_count_y;
+    // Host-selected strategy:
+    //   0 = light-centric atomic append
+    //   1 = tile-centric serial scan
+    //   2 = tile-centric parallel scan with shared-memory reduction
+    uint assignment_mode;
+} push_constants;
+
+// Used only by the tile_parallel_shared path. Each workgroup owns one tile;
+// lanes first count disjoint light ranges, then reduce those partial counts.
+shared uint partial_counts[256];
+const float kIntersectionDistanceEpsilon = 1.0e-6;
+
+uint tile_index_from_xy(uint tile_x, uint tile_y) {
+    return tile_y * push_constants.tile_count_x + tile_x;
+}
+
+bool circle_intersects_tile(vec4 light_record, uint tile_x, uint tile_y) {
+    const float tile_width = 1.0 / float(push_constants.tile_count_x);
+    const float tile_height = 1.0 / float(push_constants.tile_count_y);
+
+    const float min_x = float(tile_x) * tile_width;
+    const float min_y = float(tile_y) * tile_height;
+    const float max_x = min_x + tile_width;
+    const float max_y = min_y + tile_height;
+
+    const float closest_x = clamp(light_record.x, min_x, max_x);
+    const float closest_y = clamp(light_record.y, min_y, max_y);
+    const float dx = light_record.x - closest_x;
+    const float dy = light_record.y - closest_y;
+    return (dx * dx + dy * dy) <= ((light_record.z * light_record.z) + kIntersectionDistanceEpsilon);
+}
+
+void run_light_atomic(uint light_index) {
+    if (light_index >= push_constants.light_count) {
+        return;
+    }
+
+    // Work mapping: one invocation owns one light. The light computes a small
+    // candidate tile rectangle, performs exact circle/tile tests, then uses
+    // global atomics to update every overlapped tile.
+    const vec4 light_record = light_buffer.values[light_index];
+    const float min_x = light_record.x - light_record.z;
+    const float max_x = light_record.x + light_record.z;
+    const float min_y = light_record.y - light_record.z;
+    const float max_y = light_record.y + light_record.z;
+
+    int min_tile_x = int(floor(min_x * float(push_constants.tile_count_x)));
+    int max_tile_x = int(floor(max_x * float(push_constants.tile_count_x)));
+    int min_tile_y = int(floor(min_y * float(push_constants.tile_count_y)));
+    int max_tile_y = int(floor(max_y * float(push_constants.tile_count_y)));
+
+    if (max_tile_x < 0 || max_tile_y < 0) {
+        return;
+    }
+    if (min_tile_x >= int(push_constants.tile_count_x) || min_tile_y >= int(push_constants.tile_count_y)) {
+        return;
+    }
+
+    // Expand the light-driven candidate range conservatively so this path does
+    // not depend on rounding exactly the same way as the host-side oracle.
+    min_tile_x = clamp(min_tile_x - 1, 0, int(push_constants.tile_count_x) - 1);
+    max_tile_x = clamp(max_tile_x + 1, 0, int(push_constants.tile_count_x) - 1);
+    min_tile_y = clamp(min_tile_y - 1, 0, int(push_constants.tile_count_y) - 1);
+    max_tile_y = clamp(max_tile_y + 1, 0, int(push_constants.tile_count_y) - 1);
+
+    for (int tile_y = min_tile_y; tile_y <= max_tile_y; ++tile_y) {
+        for (int tile_x = min_tile_x; tile_x <= max_tile_x; ++tile_x) {
+            if (!circle_intersects_tile(light_record, uint(tile_x), uint(tile_y))) {
+                continue;
+            }
+            const uint tile_index = tile_index_from_xy(uint(tile_x), uint(tile_y));
+            // This is the contention point being measured: clustered lights
+            // make many invocations increment the same tile counters.
+            atomicAdd(tile_count_buffer.values[tile_index], 1u);
+            atomicAdd(stats_buffer.values[0], 1u);
+        }
+    }
+}
+
+void run_tile_serial(uint tile_index) {
+    const uint tile_count = push_constants.tile_count_x * push_constants.tile_count_y;
+    if (tile_index >= tile_count) {
+        return;
+    }
+
+    const uint tile_x = tile_index % push_constants.tile_count_x;
+    const uint tile_y = tile_index / push_constants.tile_count_x;
+
+    // Work mapping: one invocation owns one tile and scans the entire light
+    // array. This avoids per-tile atomics but multiplies light reads by
+    // tile_count_x * tile_count_y.
+    uint tile_hits = 0u;
+    for (uint light_index = 0u; light_index < push_constants.light_count; ++light_index) {
+        const vec4 light_record = light_buffer.values[light_index];
+        if (circle_intersects_tile(light_record, tile_x, tile_y)) {
+            ++tile_hits;
+        }
+    }
+
+    tile_count_buffer.values[tile_index] = tile_hits;
+    atomicAdd(stats_buffer.values[0], tile_hits);
+}
+
+void run_tile_parallel_shared(uint tile_index, uint local_index) {
+    const uint tile_count = push_constants.tile_count_x * push_constants.tile_count_y;
+    if (tile_index >= tile_count) {
+        return;
+    }
+
+    const uint tile_x = tile_index % push_constants.tile_count_x;
+    const uint tile_y = tile_index / push_constants.tile_count_x;
+    const uint local_size_x = gl_WorkGroupSize.x;
+
+    // Work mapping: one workgroup owns one tile. Lanes stride through the
+    // light list so the tile scan is parallel instead of one-lane serial.
+    uint local_hits = 0u;
+    for (uint light_index = local_index; light_index < push_constants.light_count; light_index += local_size_x) {
+        const vec4 light_record = light_buffer.values[light_index];
+        if (circle_intersects_tile(light_record, tile_x, tile_y)) {
+            ++local_hits;
+        }
+    }
+
+    partial_counts[local_index] = local_hits;
+    barrier();
+
+    // In-workgroup tree reduction. The only global atomic in this mode records
+    // the total-overlap statistic after the tile count is already complete.
+    for (uint stride = local_size_x / 2u; stride > 0u; stride >>= 1u) {
+        if (local_index < stride) {
+            partial_counts[local_index] += partial_counts[local_index + stride];
+        }
+        barrier();
+    }
+
+    if (local_index == 0u) {
+        tile_count_buffer.values[tile_index] = partial_counts[0];
+        atomicAdd(stats_buffer.values[0], partial_counts[0]);
+    }
+}
+
+void main() {
+    if (gl_GlobalInvocationID.x == 0u) {
+        stats_buffer.values[1] = push_constants.assignment_mode;
+    }
+
+    // Dispatch geometry is mode-dependent and must match host-side run_dispatch:
+    // light_atomic dispatches by light count, tile_serial by tile count, and
+    // tile_parallel_shared launches one workgroup per tile.
+    if (push_constants.assignment_mode == 0u) {
+        run_light_atomic(gl_GlobalInvocationID.x);
+        return;
+    }
+
+    if (push_constants.assignment_mode == 1u) {
+        run_tile_serial(gl_GlobalInvocationID.x);
+        return;
+    }
+
+    run_tile_parallel_shared(gl_WorkGroupID.x, gl_LocalInvocationID.x);
+}

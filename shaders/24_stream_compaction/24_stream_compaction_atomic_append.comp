@@ -1,3 +1,8 @@
+// Experiment 24: Stream Compaction
+// Shader role: atomic append.
+// What this experiment tests: stream compaction pipeline structure.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -19,6 +24,7 @@ layout(push_constant) uniform PushConstants {
     uint block_count;
     uint valid_ratio_percent;
     uint pattern_seed;
+    uint block_scan_items_per_thread;
 } push_constants;
 
 const uint kHashMul0 = 0x7feb352du;

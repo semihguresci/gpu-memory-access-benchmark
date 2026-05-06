@@ -1,3 +1,8 @@
+// Experiment 18: Register Pressure Proxy
+// Shader role: temp4.
+// What this experiment tests: register pressure via extra live temporaries.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 #extension GL_GOOGLE_include_directive : enable
 #define TEMP_COUNT 4

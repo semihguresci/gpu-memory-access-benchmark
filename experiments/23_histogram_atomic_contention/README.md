@@ -1,10 +1,10 @@
-﻿# Experiment 23: Histogram and Atomic Contention
+# Experiment 23: Histogram and Atomic Contention
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/23_histogram_atomic_contention.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

@@ -1,3 +1,8 @@
+// Experiment 24: Stream Compaction
+// Shader role: stage2 block scan.
+// What this experiment tests: stream compaction pipeline structure.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -19,30 +24,68 @@ layout(push_constant) uniform PushConstants {
     uint block_count;
     uint valid_ratio_percent;
     uint pattern_seed;
+    uint block_scan_items_per_thread;
 } push_constants;
 
-shared uint shared_prefix[256];
+const uint kWorkgroupSize = 256u;
+const uint kMaxBlockScanElements = 3072u;
+
+shared uint scan_ping[kMaxBlockScanElements];
+shared uint scan_pong[kMaxBlockScanElements];
 
 void main() {
     const uint local_index = gl_LocalInvocationID.x;
-    shared_prefix[local_index] = local_index < push_constants.block_count ? block_counts_buffer.values[local_index] : 0u;
+    // Load per-workgroup keep counts into shared memory. Unused shared slots
+    // are zero-filled so the same scan kernel handles the tail cleanly when
+    // block_count is not an exact multiple of the workgroup width.
+    for (uint item = 0u; item < push_constants.block_scan_items_per_thread; ++item) {
+        const uint shared_index = local_index + (item * kWorkgroupSize);
+        scan_ping[shared_index] =
+            shared_index < push_constants.block_count ? block_counts_buffer.values[shared_index] : 0u;
+        scan_pong[shared_index] = 0u;
+    }
     barrier();
 
-    for (uint offset = 1u; offset < 256u; offset <<= 1u) {
-        uint addend = 0u;
-        if (local_index >= offset) {
-            addend = shared_prefix[local_index - offset];
+    const uint scan_elements = push_constants.block_scan_items_per_thread * kWorkgroupSize;
+    // This is the second-level scan of the compaction pipeline: instead of
+    // scanning per-element flags, it scans one count per workgroup to compute
+    // where each workgroup's survivors should start in the final output.
+    bool read_ping = true;
+    for (uint offset = 1u; offset < scan_elements; offset <<= 1u) {
+        for (uint item = 0u; item < push_constants.block_scan_items_per_thread; ++item) {
+            const uint shared_index = local_index + (item * kWorkgroupSize);
+            const uint current = read_ping ? scan_ping[shared_index] : scan_pong[shared_index];
+            const uint addend =
+                shared_index >= offset
+                    ? (read_ping ? scan_ping[shared_index - offset] : scan_pong[shared_index - offset])
+                    : 0u;
+            if (read_ping) {
+                scan_pong[shared_index] = current + addend;
+            } else {
+                scan_ping[shared_index] = current + addend;
+            }
         }
         barrier();
-        shared_prefix[local_index] += addend;
-        barrier();
+        read_ping = !read_ping;
     }
 
-    if (local_index < push_constants.block_count) {
-        block_prefix_buffer.values[local_index] = shared_prefix[local_index] - block_counts_buffer.values[local_index];
+    for (uint item = 0u; item < push_constants.block_scan_items_per_thread; ++item) {
+        const uint shared_index = local_index + (item * kWorkgroupSize);
+        if (shared_index < push_constants.block_count) {
+            // Convert the inclusive scan result into an exclusive block prefix.
+            // Stage 3 will add this block-level carry to each element's local
+            // prefix from stage 1.
+            block_prefix_buffer.values[shared_index] =
+                (read_ping ? scan_ping[shared_index] : scan_pong[shared_index]) - block_counts_buffer.values[shared_index];
+        }
     }
 
-    if (local_index == 255u) {
-        counter_buffer.value = shared_prefix[255];
+    barrier();
+
+    if (local_index == 0u && push_constants.block_count > 0u) {
+        // Publish the total number of kept elements so the host can validate
+        // the compacted output length and ignore unwritten tail entries.
+        counter_buffer.value =
+            read_ping ? scan_ping[push_constants.block_count - 1u] : scan_pong[push_constants.block_count - 1u];
     }
 }

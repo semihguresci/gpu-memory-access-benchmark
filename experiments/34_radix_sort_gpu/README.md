@@ -4,7 +4,7 @@
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/advanced_plans/01_radix_sort_gpu.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

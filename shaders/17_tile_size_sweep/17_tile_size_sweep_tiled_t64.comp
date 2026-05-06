@@ -1,3 +1,8 @@
+// Experiment 17: Tile Size Sweep
+// Shader role: tiled t64.
+// What this experiment tests: tile-size trade-offs.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 #define TILE_SIZE 64

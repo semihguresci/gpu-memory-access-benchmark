@@ -1,10 +1,10 @@
-﻿# Experiment 08: std430 vs std140 vs Packed
+# Experiment 08: std430 vs std140 vs Packed
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/08_std430_std140_packed.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

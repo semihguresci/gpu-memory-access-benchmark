@@ -1,0 +1,76 @@
+// Experiment 43: Ray Friendly Memory Layouts
+// Shader role: main path.
+// What this experiment tests: ray-friendly layout and traversal locality.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Contract: backing storage for both layouts. The host packs either AOS records
+// or SOA planes into this buffer and supplies the offsets/strides that tell the
+// shader how to interpret the words for the active variant.
+layout(std430, binding = 0) readonly buffer SourceBuffer {
+    uint values[];
+} source_buffer;
+
+// Contract: one traversal-style checksum per logical primitive. The checksum
+// exists only to force the requested layout reads to become observable work.
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint primitive_count;
+    uint layout_mode; // 0=aos64, 1=soa32
+    uint access_mode; // 0=sequential, 1=hashed
+    uint aos_stride_words;
+    uint active_words;
+    uint aos_base_words;
+    uint soa_base_words;
+    uint soa_stride_words;
+    uint mapping_seed;
+} push_constants;
+
+uint hash32(uint value) {
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    value ^= value >> 16u;
+    return value;
+}
+
+uint resolve_source_index(uint index_value) {
+    if (push_constants.access_mode == 1u) {
+        return hash32(index_value ^ push_constants.mapping_seed) % push_constants.primitive_count;
+    }
+    return index_value;
+}
+
+uint read_layout_word(uint source_index, uint word_index) {
+    if (push_constants.layout_mode == 0u) {
+        const uint offset = push_constants.aos_base_words + source_index * push_constants.aos_stride_words + word_index;
+        return source_buffer.values[offset];
+    }
+
+    const uint offset = push_constants.soa_base_words + word_index * push_constants.soa_stride_words + source_index;
+    return source_buffer.values[offset];
+}
+
+void main() {
+    const uint index_value = gl_GlobalInvocationID.x;
+    if (index_value >= push_constants.primitive_count) {
+        return;
+    }
+
+    const uint source_index = resolve_source_index(index_value);
+    uint state = 0x811c9dc5u ^ (index_value * 0x9e3779b9u);
+    for (uint word = 0u; word < push_constants.active_words; ++word) {
+        const uint value = read_layout_word(source_index, word);
+        state ^= value + (word * 0x85ebca6bu);
+        state = (state << 5u) | (state >> 27u);
+        state *= 0xc2b2ae35u;
+    }
+    output_buffer.values[index_value] = state;
+}

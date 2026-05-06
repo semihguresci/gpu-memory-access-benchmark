@@ -4,7 +4,7 @@
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/28_device_local_vs_host_visible_heap_placement.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

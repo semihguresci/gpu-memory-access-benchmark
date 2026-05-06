@@ -1,3 +1,8 @@
+// Experiment 19: Branch Divergence
+// Shader role: main path.
+// What this experiment tests: branch divergence cost.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
 #version 450
 
 layout(local_size_x = 256) in;

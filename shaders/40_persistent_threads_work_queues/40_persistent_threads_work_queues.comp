@@ -1,0 +1,75 @@
+// Experiment 40: Persistent Threads Work Queues
+// Shader role: main path.
+// What this experiment tests: persistent threads versus static partitioning.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Contract: one cost value per logical task. Both scheduling modes consume the
+// same task stream; only the mapping from invocations to tasks changes.
+layout(std430, binding = 0) readonly buffer TaskCostsBuffer {
+    uint values[];
+} task_costs_buffer;
+
+// Contract: one observable checksum per completed task so scheduling overhead
+// can be compared without ambiguity about whether the task actually ran.
+layout(std430, binding = 1) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+// Contract: single atomic work-queue cursor. The host resets next_index before
+// persistent-mode dispatches; static partitioning ignores this buffer.
+layout(std430, binding = 2) buffer QueueStateBuffer {
+    uint next_index;
+} queue_state_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint task_count;
+    uint scheduling_mode;
+    uint reserved0;
+    uint reserved1;
+} push_constants;
+
+uint execute_task(uint task_index, uint iteration_count) {
+    uint state = task_index * 1664525u + 1013904223u;
+    for (uint iter = 0u; iter < iteration_count; ++iter) {
+        state ^= (state << 13u);
+        state ^= (state >> 17u);
+        state ^= (state << 5u);
+        state = state * 1664525u + 1013904223u;
+    }
+    return state;
+}
+
+void run_static_partitioned() {
+    const uint task_index = gl_GlobalInvocationID.x;
+    if (task_index >= push_constants.task_count) {
+        return;
+    }
+
+    const uint iteration_count = task_costs_buffer.values[task_index];
+    output_buffer.values[task_index] = execute_task(task_index, iteration_count);
+}
+
+void run_persistent_queue() {
+    while (true) {
+        const uint task_index = atomicAdd(queue_state_buffer.next_index, 1u);
+        if (task_index >= push_constants.task_count) {
+            break;
+        }
+
+        const uint iteration_count = task_costs_buffer.values[task_index];
+        output_buffer.values[task_index] = execute_task(task_index, iteration_count);
+    }
+}
+
+void main() {
+    if (push_constants.scheduling_mode == 0u) {
+        run_static_partitioned();
+        return;
+    }
+
+    run_persistent_queue();
+}

@@ -4,7 +4,7 @@
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/33_two_dimensional_locality_transpose_study.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

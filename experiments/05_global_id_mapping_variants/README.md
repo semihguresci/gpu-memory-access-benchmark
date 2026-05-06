@@ -1,10 +1,10 @@
-﻿# Experiment 05: Global ID Mapping Variants
+# Experiment 05: Global ID Mapping Variants
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/05_global_id_mapping_variants.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

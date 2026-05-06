@@ -1,10 +1,10 @@
-﻿# Experiment 03: Memory Copy Baseline
+# Experiment 03: Memory Copy Baseline
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/03_memory_copy_baseline.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

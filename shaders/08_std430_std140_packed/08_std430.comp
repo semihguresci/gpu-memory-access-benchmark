@@ -1,3 +1,8 @@
+// Experiment 08: STD430 STD140 Packed
+// Shader role: std430.
+// What this experiment tests: std430, std140, and packed layout padding.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;

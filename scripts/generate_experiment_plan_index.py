@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from experiment_manifest import ROOT, load_experiment_manifest
 
 
@@ -27,8 +30,13 @@ def _format_line(experiment: dict[str, object]) -> str:
     experiment_number = str(experiment["id"])[:2]
     return (
         f"- [Experiment {experiment_number}: {experiment['plan_title']}]"
-        f"({experiment['plan_path']}): {experiment['plan_description']}"
+        f"({_docs_relative_plan_path(experiment)}): {experiment['plan_description']}"
     )
+
+
+def _docs_relative_plan_path(experiment: dict[str, object]) -> str:
+    plan_path = ROOT / str(experiment["plan_path"])
+    return Path(os.path.relpath(plan_path, OUTPUT_PATH.parent)).as_posix()
 
 
 def main() -> None:
@@ -52,7 +60,8 @@ def main() -> None:
 
     for experiment in _memory_sequence(experiments):
         lines.append(
-            f"- [Experiment {str(experiment['id'])[:2]}: {experiment['plan_title']}]({experiment['plan_path']})"
+            f"- [Experiment {str(experiment['id'])[:2]}: {experiment['plan_title']}]"
+            f"({_docs_relative_plan_path(experiment)})"
         )
 
     lines.extend(["", "## Core Experiment Plans"])

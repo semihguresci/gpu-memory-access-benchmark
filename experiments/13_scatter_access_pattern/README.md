@@ -1,10 +1,10 @@
-﻿# Experiment 13: Scatter Access Pattern
+# Experiment 13: Scatter Access Pattern
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/13_scatter_access_pattern.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

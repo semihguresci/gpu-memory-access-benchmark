@@ -1,3 +1,8 @@
+// Experiment 24: Stream Compaction
+// Shader role: stage3 scatter.
+// What this experiment tests: stream compaction pipeline structure.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -23,6 +28,7 @@ layout(push_constant) uniform PushConstants {
     uint block_count;
     uint valid_ratio_percent;
     uint pattern_seed;
+    uint block_scan_items_per_thread;
 } push_constants;
 
 const uint kHashMul0 = 0x7feb352du;
@@ -44,11 +50,15 @@ bool is_index_valid(uint index_value) {
 
 void main() {
     const uint index_value = gl_GlobalInvocationID.x;
+    // Only elements that satisfied the predicate in stage 1 participate in
+    // the compacted output stream.
     if (index_value >= push_constants.element_count || !is_index_valid(index_value)) {
         return;
     }
 
     const uint block_index = gl_WorkGroupID.x;
+    // Final output position = number of kept elements from earlier workgroups
+    // plus this element's exclusive rank inside its own workgroup.
     const uint dst_index = block_prefix_buffer.values[block_index] + local_prefix_buffer.values[index_value];
     output_buffer.values[dst_index] = input_buffer.values[index_value];
 }

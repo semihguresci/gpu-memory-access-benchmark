@@ -1,3 +1,8 @@
+// Experiment 34: Radix Sort GPU
+// Shader role: radix sort scatter.
+// What this experiment tests: GPU radix-sort pipeline stages.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 // Scatter pass for radix sort.
@@ -6,10 +11,8 @@
 // Output position for element i (in block b, with digit d, local rank r):
 //   output_pos = digit_starts[d] + block_prefix[d * num_blocks + b] + r
 //
-// Local rank r is computed with a shared-memory count + prefix-scan + atomic-increment:
-//   1. Count: each thread atomicAdds 1 to local_counts[digit]  (gives per-block counts)
-//   2. Scan:  inclusive prefix scan over local_counts
-//   3. Rank:  each thread does atomicAdd on local_prefix[digit] (initialised to exclusive prefix)
+// Local rank r is computed by counting same-digit threads with smaller local_id.
+// That preserves lane order within each block, making every LSD radix pass stable.
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -36,56 +39,42 @@ layout(push_constant) uniform PushConstants {
     uint radix_mask; // 0xFF for 8-bit, 0x0F for 4-bit
 } push_constants;
 
-shared uint local_counts[256]; // shared histogram for computing local rank
-// Note: sized for the maximum radix size (8-bit, 256 entries) so this shader
-// handles both the 8bit_4pass and 4bit_8pass variants via push_constants.radix_mask.
-// For 4-bit variants, only entries 0-15 are used; the rest remain 0 and do not
-// affect correctness but do consume the full shared-memory allocation.
-shared uint local_prefix[256]; // exclusive prefix for rank assignment
+shared uint local_digits[256];
 
 void main() {
     const uint local_id = gl_LocalInvocationID.x;
     const uint block_id = gl_WorkGroupID.x;
     const uint global_id = gl_GlobalInvocationID.x;
 
-    // Phase 1: clear and count.
-    local_counts[local_id] = 0u;
-    barrier();
-
     uint my_key = 0u;
     uint my_digit = 0u;
     const bool in_bounds = global_id < push_constants.element_count;
 
+    // Cache every lane's current radix digit in shared memory so the local-rank
+    // computation can inspect earlier lanes without reloading global memory.
     if (in_bounds) {
         my_key = keys_in.values[global_id];
         my_digit = (my_key >> push_constants.bit_offset) & push_constants.radix_mask;
-        atomicAdd(local_counts[my_digit], 1u);
+        local_digits[local_id] = my_digit;
+    } else {
+        local_digits[local_id] = 0xFFFFFFFFu;
     }
 
     barrier();
 
-    // Phase 2: inclusive prefix scan over local_counts.
-    for (uint offset = 1u; offset < 256u; offset <<= 1u) {
-        const uint addend = (local_id >= offset) ? local_counts[local_id - offset] : 0u;
-        barrier();
-        local_counts[local_id] += addend;
-        barrier();
-    }
-
-    // Phase 3: convert to exclusive prefix, store in local_prefix for rank assignment.
-    local_prefix[local_id] = (local_id == 0u) ? 0u : local_counts[local_id - 1u];
-    barrier();
-
-    // Phase 4: each in-bounds thread atomically claims its local rank.
     uint local_rank = 0u;
     if (in_bounds) {
-        local_rank = atomicAdd(local_prefix[my_digit], 1u);
-    }
-
-    barrier();
-
-    // Phase 5: scatter.
-    if (in_bounds) {
+        // Count only prior lanes with the same digit. That preserves local lane
+        // order inside each digit bucket, which is the stability requirement
+        // that makes LSD radix sort correct across multiple passes.
+        for (uint prior = 0u; prior < local_id; ++prior) {
+            if (local_digits[prior] == my_digit) {
+                ++local_rank;
+            }
+        }
+        // Compose the final destination from three pieces:
+        // 1) earlier digits, 2) earlier blocks of this digit, 3) earlier lanes
+        // in this block with the same digit.
         const uint global_start = digit_starts.values[my_digit];
         const uint block_start = block_prefix.values[my_digit * push_constants.num_blocks + block_id];
         keys_out.values[global_start + block_start + local_rank] = my_key;

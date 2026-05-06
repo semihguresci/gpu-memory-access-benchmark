@@ -29,17 +29,18 @@ constexpr uint32_t kDispatchCount = 1U;
 // Candidate problem sizes (in elements). The scan kernel launches a single
 // workgroup of 256 threads that iterates over all blocks, so num_blocks
 // (= elements / kWorkgroupSize) must fit within the sequential loop budget.
-// This benchmark currently samples sizes up to 64K elements (256 blocks) to
-// keep the single-workgroup scan fast while still exercising meaningful
+// This benchmark now samples multi-mega-element sorts so desktop GPUs see a
+// materially larger memory footprint while the single-workgroup scan remains
+// practical for a microbenchmark.
 // problem sizes.
-constexpr std::array<uint32_t, 5> kCandidateProblemSizes = {
-    4096U, 8192U, 16384U, 32768U, 65536U,
+constexpr std::array<uint32_t, 6> kCandidateProblemSizes = {
+    262144U, 524288U, 1048576U, 2097152U, 4194304U, 8388608U,
 };
 
 // Implementation limit for the single-workgroup scan used by
-// build_problem_sizes(): up to 1024 blocks (262144 elements at the current
-// workgroup size).
-constexpr uint32_t kMaxBlocks = 1024U;
+// build_problem_sizes(): up to 32768 blocks (8388608 elements at the current
+// workgroup size). The current sweep tops out at 32768 blocks.
+constexpr uint32_t kMaxBlocks = 32768U;
 
 enum class VariantKind : uint32_t {
     Radix8Bit, // 8-bit digit width, 4 passes over 32-bit keys
@@ -49,10 +50,10 @@ enum class VariantKind : uint32_t {
 struct VariantDescriptor {
     VariantKind kind;
     const char* variant_name;
-    uint32_t radix_bits;  // 8 or 4
-    uint32_t radix_size;  // 256 or 16
-    uint32_t radix_mask;  // 0xFF or 0x0F
-    uint32_t num_passes;  // 4 or 8
+    uint32_t radix_bits; // 8 or 4
+    uint32_t radix_size; // 256 or 16
+    uint32_t radix_mask; // 0xFF or 0x0F
+    uint32_t num_passes; // 4 or 8
 };
 
 constexpr std::array<VariantDescriptor, 2> kVariantDescriptors = {{
@@ -159,46 +160,43 @@ bool create_buffer_resources(VulkanContext& context, uint32_t max_problem_size, 
     const VkDeviceSize hist_bytes = compute_histogram_span_bytes(max_radix_size, max_num_blocks);
     const VkDeviceSize digit_starts_bytes = compute_digit_starts_span_bytes(max_radix_size);
 
-    if (!create_buffer_resource(context.physical_device(), context.device(), keys_bytes,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                out_resources.keys_ping)) {
+    if (!create_buffer_resource(
+            context.physical_device(), context.device(), keys_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, out_resources.keys_ping)) {
         std::cerr << "[" << kExperimentId << "] Failed to create keys_ping buffer.\n";
         return false;
     }
-    if (!create_buffer_resource(context.physical_device(), context.device(), keys_bytes,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                out_resources.keys_pong)) {
+    if (!create_buffer_resource(
+            context.physical_device(), context.device(), keys_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, out_resources.keys_pong)) {
         std::cerr << "[" << kExperimentId << "] Failed to create keys_pong buffer.\n";
         return false;
     }
-    if (!create_buffer_resource(context.physical_device(), context.device(), hist_bytes,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                out_resources.histogram)) {
+    if (!create_buffer_resource(
+            context.physical_device(), context.device(), hist_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, out_resources.histogram)) {
         std::cerr << "[" << kExperimentId << "] Failed to create histogram buffer.\n";
         return false;
     }
-    if (!create_buffer_resource(context.physical_device(), context.device(), hist_bytes,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                out_resources.block_prefix)) {
+    if (!create_buffer_resource(
+            context.physical_device(), context.device(), hist_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, out_resources.block_prefix)) {
         std::cerr << "[" << kExperimentId << "] Failed to create block_prefix buffer.\n";
         return false;
     }
-    if (!create_buffer_resource(context.physical_device(), context.device(), digit_starts_bytes,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                out_resources.digit_starts)) {
+    if (!create_buffer_resource(
+            context.physical_device(), context.device(), digit_starts_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, out_resources.digit_starts)) {
         std::cerr << "[" << kExperimentId << "] Failed to create digit_starts buffer.\n";
         return false;
     }
 
-    if (!map_buffer_memory(context, out_resources.keys_ping, "radix sort keys_ping", out_resources.keys_ping_mapped_ptr)) {
+    if (!map_buffer_memory(context, out_resources.keys_ping, "radix sort keys_ping",
+                           out_resources.keys_ping_mapped_ptr)) {
         return false;
     }
-    if (!map_buffer_memory(context, out_resources.keys_pong, "radix sort keys_pong", out_resources.keys_pong_mapped_ptr)) {
+    if (!map_buffer_memory(context, out_resources.keys_pong, "radix sort keys_pong",
+                           out_resources.keys_pong_mapped_ptr)) {
         return false;
     }
     return true;
@@ -229,32 +227,30 @@ void update_count_descriptor_set(VulkanContext& context, VkBuffer keys_src, VkDe
         {{0U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, keys_info}, {1U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hist_info}});
 }
 
-void update_scan_descriptor_set(VulkanContext& context, const BufferResources& buffers, VkDescriptorSet descriptor_set) {
+void update_scan_descriptor_set(VulkanContext& context, const BufferResources& buffers,
+                                VkDescriptorSet descriptor_set) {
     const VkDescriptorBufferInfo hist_info{buffers.histogram.buffer, 0U, buffers.histogram.size};
     const VkDescriptorBufferInfo prefix_info{buffers.block_prefix.buffer, 0U, buffers.block_prefix.size};
     const VkDescriptorBufferInfo starts_info{buffers.digit_starts.buffer, 0U, buffers.digit_starts.size};
-    VulkanComputeUtils::update_descriptor_set_buffers(
-        context.device(), descriptor_set,
-        {{0U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hist_info},
-         {1U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, prefix_info},
-         {2U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, starts_info}});
+    VulkanComputeUtils::update_descriptor_set_buffers(context.device(), descriptor_set,
+                                                      {{0U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hist_info},
+                                                       {1U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, prefix_info},
+                                                       {2U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, starts_info}});
 }
 
 void update_scatter_descriptor_set(VulkanContext& context, VkBuffer keys_src, VkDeviceSize keys_src_size,
                                    const BufferResources& buffers, VkDescriptorSet descriptor_set) {
     const VkDescriptorBufferInfo src_info{keys_src, 0U, keys_src_size};
     const bool src_is_ping = (keys_src == buffers.keys_ping.buffer);
-    const VkDescriptorBufferInfo dst_info{
-        src_is_ping ? buffers.keys_pong.buffer : buffers.keys_ping.buffer, 0U,
-        src_is_ping ? buffers.keys_pong.size : buffers.keys_ping.size};
+    const VkDescriptorBufferInfo dst_info{src_is_ping ? buffers.keys_pong.buffer : buffers.keys_ping.buffer, 0U,
+                                          src_is_ping ? buffers.keys_pong.size : buffers.keys_ping.size};
     const VkDescriptorBufferInfo prefix_info{buffers.block_prefix.buffer, 0U, buffers.block_prefix.size};
     const VkDescriptorBufferInfo starts_info{buffers.digit_starts.buffer, 0U, buffers.digit_starts.size};
-    VulkanComputeUtils::update_descriptor_set_buffers(
-        context.device(), descriptor_set,
-        {{0U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, src_info},
-         {1U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, dst_info},
-         {2U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, prefix_info},
-         {3U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, starts_info}});
+    VulkanComputeUtils::update_descriptor_set_buffers(context.device(), descriptor_set,
+                                                      {{0U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, src_info},
+                                                       {1U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, dst_info},
+                                                       {2U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, prefix_info},
+                                                       {3U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, starts_info}});
 }
 
 bool create_pipeline_resources(VulkanContext& context, const std::string& count_shader_path,
@@ -481,8 +477,8 @@ void record_compute_barrier(VkCommandBuffer command_buffer) {
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0U, 1U, &barrier, 0U, nullptr, 0U, nullptr);
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0U,
+                         1U, &barrier, 0U, nullptr, 0U, nullptr);
 }
 
 // Run one complete radix sort (all passes) and return GPU time in ms.
@@ -505,7 +501,7 @@ double run_sort(VulkanContext& context, const PipelineResources& pipelines, cons
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines.count_pipeline_layout, 0U, 1U,
                                     &count_ds, 0U, nullptr);
             vkCmdPushConstants(cmd, pipelines.count_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
-                                static_cast<uint32_t>(sizeof(count_pc)), &count_pc);
+                               static_cast<uint32_t>(sizeof(count_pc)), &count_pc);
             vkCmdDispatch(cmd, num_blocks, 1U, 1U);
 
             record_compute_barrier(cmd);
@@ -516,7 +512,7 @@ double run_sort(VulkanContext& context, const PipelineResources& pipelines, cons
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines.scan_pipeline_layout, 0U, 1U,
                                     &pipelines.scan_descriptor_set, 0U, nullptr);
             vkCmdPushConstants(cmd, pipelines.scan_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
-                                static_cast<uint32_t>(sizeof(scan_pc)), &scan_pc);
+                               static_cast<uint32_t>(sizeof(scan_pc)), &scan_pc);
             vkCmdDispatch(cmd, 1U, 1U, 1U);
 
             record_compute_barrier(cmd);
@@ -529,7 +525,7 @@ double run_sort(VulkanContext& context, const PipelineResources& pipelines, cons
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines.scatter_pipeline_layout, 0U, 1U,
                                     &scatter_ds, 0U, nullptr);
             vkCmdPushConstants(cmd, pipelines.scatter_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
-                                static_cast<uint32_t>(sizeof(scatter_pc)), &scatter_pc);
+                               static_cast<uint32_t>(sizeof(scatter_pc)), &scatter_pc);
             vkCmdDispatch(cmd, num_blocks, 1U, 1U);
 
             if (pass + 1U < variant.num_passes) {
@@ -550,9 +546,8 @@ std::vector<uint32_t> cpu_reference_sort(const uint32_t* keys, uint32_t count) {
 // After a full sort, the output lives in ping if num_passes is even, pong otherwise.
 bool validate_sort_result(const BufferResources& buffers, uint32_t element_count, uint32_t num_passes,
                           const std::vector<uint32_t>& reference_sorted) {
-    const uint32_t* result_ptr = (num_passes % 2U == 0U)
-                                     ? static_cast<const uint32_t*>(buffers.keys_ping_mapped_ptr)
-                                     : static_cast<const uint32_t*>(buffers.keys_pong_mapped_ptr);
+    const uint32_t* result_ptr = (num_passes % 2U == 0U) ? static_cast<const uint32_t*>(buffers.keys_ping_mapped_ptr)
+                                                         : static_cast<const uint32_t*>(buffers.keys_pong_mapped_ptr);
     if (result_ptr == nullptr) {
         return false;
     }
@@ -564,6 +559,21 @@ bool validate_sort_result(const BufferResources& buffers, uint32_t element_count
     return true;
 }
 
+uint64_t compute_estimated_global_bytes_per_pass(uint32_t element_count, uint32_t num_blocks, uint32_t radix_size) {
+    const uint64_t element_bytes = static_cast<uint64_t>(element_count) * sizeof(uint32_t);
+    const uint64_t histogram_bytes =
+        static_cast<uint64_t>(radix_size) * static_cast<uint64_t>(num_blocks) * sizeof(uint32_t);
+    const uint64_t digit_starts_bytes = static_cast<uint64_t>(radix_size) * sizeof(uint32_t);
+
+    return
+        // count pass
+        element_bytes + histogram_bytes +
+        // scan pass
+        histogram_bytes + histogram_bytes + digit_starts_bytes +
+        // scatter pass
+        element_bytes + element_bytes + element_bytes + element_bytes;
+}
+
 void fill_keys(uint32_t* keys, uint32_t element_count) {
     for (uint32_t index = 0U; index < element_count; ++index) {
         keys[index] = input_pattern_value(index);
@@ -571,13 +581,17 @@ void fill_keys(uint32_t* keys, uint32_t element_count) {
 }
 
 void record_case_notes(std::string& notes, const VariantDescriptor& variant, uint32_t element_count,
-                       uint32_t num_blocks, bool correctness_pass, bool dispatch_ok) {
+                       uint32_t num_blocks, uint64_t key_only_bytes_per_sort, uint64_t estimated_global_bytes_per_sort,
+                       bool correctness_pass, bool dispatch_ok) {
     append_note(notes, std::string("variant=") + variant.variant_name);
     append_note(notes, "element_count=" + std::to_string(element_count));
     append_note(notes, "num_blocks=" + std::to_string(num_blocks));
     append_note(notes, "radix_bits=" + std::to_string(variant.radix_bits));
     append_note(notes, "num_passes=" + std::to_string(variant.num_passes));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
+    append_note(notes, "key_only_bytes_per_sort=" + std::to_string(key_only_bytes_per_sort));
+    append_note(notes, "estimated_global_bytes_per_sort=" + std::to_string(estimated_global_bytes_per_sort));
+    append_note(notes, "gbps_mode=estimated_global_bytes");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
     }
@@ -599,8 +613,11 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
     fill_keys(keys_ptr, element_count);
     const std::vector<uint32_t> reference_sorted = cpu_reference_sort(keys_ptr, element_count);
 
-    const uint64_t bytes_per_sort =
-        static_cast<uint64_t>(element_count) * sizeof(uint32_t) * 2ULL * static_cast<uint64_t>(variant.num_passes);
+    const uint64_t key_only_bytes_per_sort =
+        static_cast<uint64_t>(element_count) * sizeof(uint32_t) * 3ULL * static_cast<uint64_t>(variant.num_passes);
+    const uint64_t estimated_global_bytes_per_sort =
+        compute_estimated_global_bytes_per_pass(element_count, num_blocks, variant.radix_size) *
+        static_cast<uint64_t>(variant.num_passes);
 
     std::vector<double> dispatch_samples;
     dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
@@ -632,7 +649,8 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
-        record_case_notes(notes, variant, element_count, num_blocks, correctness_pass, dispatch_ok);
+        record_case_notes(notes, variant, element_count, num_blocks, key_only_bytes_per_sort,
+                          estimated_global_bytes_per_sort, correctness_pass, dispatch_ok);
 
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
@@ -643,7 +661,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
             .gpu_ms = dispatch_ms,
             .end_to_end_ms = e2e_ms.count(),
             .throughput = compute_throughput_elements_per_second(element_count, kDispatchCount, dispatch_ms),
-            .gbps = compute_effective_gbps_from_bytes(bytes_per_sort, dispatch_ms),
+            .gbps = compute_effective_gbps_from_bytes(estimated_global_bytes_per_sort, dispatch_ms),
             .correctness_pass = correctness_pass,
             .notes = std::move(notes),
         });

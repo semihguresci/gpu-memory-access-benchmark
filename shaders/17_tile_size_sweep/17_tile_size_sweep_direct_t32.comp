@@ -1,3 +1,8 @@
+// Experiment 17: Tile Size Sweep
+// Shader role: direct t32.
+// What this experiment tests: tile-size trade-offs.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;

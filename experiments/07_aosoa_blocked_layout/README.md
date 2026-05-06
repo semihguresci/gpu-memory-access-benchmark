@@ -1,10 +1,10 @@
-﻿# Experiment 07: AoSoA Blocked Layout
+# Experiment 07: AoSoA Blocked Layout
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/07_aosoa_blocked_layout.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

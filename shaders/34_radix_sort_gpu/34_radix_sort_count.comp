@@ -1,3 +1,8 @@
+// Experiment 34: Radix Sort GPU
+// Shader role: radix sort count.
+// What this experiment tests: GPU radix-sort pipeline stages.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 // Per-block digit histogram for an 8-bit or 4-bit radix sort pass.
@@ -31,10 +36,14 @@ void main() {
     const uint block_id = gl_WorkGroupID.x;
     const uint global_id = gl_GlobalInvocationID.x;
 
+    // Start each radix pass with an empty per-workgroup histogram. The count
+    // stage measures how much work each digit bucket has before any movement.
     local_counts[local_id] = 0u;
     barrier();
 
     if (global_id < push_constants.element_count) {
+        // Extract only the current radix digit. Earlier passes have already
+        // established ordering within the lower-significance bits.
         const uint digit = (keys_in.values[global_id] >> push_constants.bit_offset) & push_constants.radix_mask;
         atomicAdd(local_counts[digit], 1u);
     }

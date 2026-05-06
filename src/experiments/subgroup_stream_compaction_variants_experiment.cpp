@@ -24,7 +24,7 @@ using ExperimentMetrics::compute_throughput_elements_per_second;
 constexpr const char* kExperimentId = "32_subgroup_stream_compaction_variants";
 constexpr uint32_t kWorkgroupSize = 256U;
 constexpr uint32_t kDispatchCount = 1U;
-constexpr uint32_t kTargetLogicalCount = 65536U;
+constexpr uint32_t kTargetLogicalCount = 67108864U;
 constexpr uint32_t kOutputSentinelValue = 0xDEADBEEFU;
 constexpr uint32_t kHashMul0 = 0x7FEB352DU;
 constexpr uint32_t kHashMul1 = 0x846CA68BU;
@@ -413,6 +413,7 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     append_note(notes, "valid_count=" + std::to_string(reference.total_valid_count));
     append_note(notes, "block_count=" + std::to_string(logical_count / kWorkgroupSize));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
+    append_note(notes, "compaction_scope=block_local");
     append_note(notes,
                 "stable_ordering=" + std::string(descriptor.kind == VariantKind::SubgroupBallot ? "true" : "false"));
     if (descriptor.kind == VariantKind::SubgroupBallot) {

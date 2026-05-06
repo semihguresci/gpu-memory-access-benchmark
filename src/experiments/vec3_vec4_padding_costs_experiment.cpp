@@ -105,9 +105,9 @@ struct SingleBufferPipelineResources {
 };
 
 std::vector<uint32_t> make_particle_counts(uint32_t max_particles) {
-    const std::array<uint32_t, 5> base_counts = {131072U, 262144U, 524288U, 1048576U, 2097152U};
+    const std::array<uint32_t, 7> base_counts = {1310720U, 2621440U, 5242880U, 6291456U, 7340032U, 8388608U, 10485760U};
     std::vector<uint32_t> output;
-    output.reserve(base_counts.size() + 4U);
+    output.reserve(base_counts.size() + 5U);
 
     for (const uint32_t value : base_counts) {
         if (value <= max_particles) {
@@ -124,7 +124,7 @@ std::vector<uint32_t> make_particle_counts(uint32_t max_particles) {
         }
     }
 
-    if (output.empty() && max_particles > 0U) {
+    if (max_particles > 0U && (output.empty() || output.back() != max_particles)) {
         output.push_back(max_particles);
     }
 

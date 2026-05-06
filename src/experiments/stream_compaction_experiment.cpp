@@ -24,7 +24,9 @@ constexpr const char* kExperimentId = "24_stream_compaction";
 constexpr uint32_t kWorkgroupSize = 256U;
 constexpr uint32_t kDispatchCountAtomic = 1U;
 constexpr uint32_t kDispatchCountThreeStage = 3U;
-constexpr uint32_t kTargetLogicalCount = kWorkgroupSize * kWorkgroupSize;
+constexpr uint32_t kMaxBlockScanItemsPerThread = 12U;
+constexpr uint32_t kMaxBlockScanElements = kWorkgroupSize * kMaxBlockScanItemsPerThread;
+constexpr uint32_t kTargetLogicalCount = kMaxBlockScanElements * kWorkgroupSize;
 constexpr uint32_t kSentinelValue = 0xDEADBEEFU;
 constexpr uint32_t kCounterSentinelValue = 0U;
 constexpr uint32_t kInputXorSeed = 0xA511E9B3U;
@@ -84,9 +86,10 @@ struct PushConstants {
     uint32_t block_count = 0U;
     uint32_t valid_ratio_percent = 0U;
     uint32_t pattern_seed = 0U;
+    uint32_t block_scan_items_per_thread = 0U;
 };
 
-static_assert(sizeof(PushConstants) == (sizeof(uint32_t) * 4U));
+static_assert(sizeof(PushConstants) == (sizeof(uint32_t) * 5U));
 
 struct ReferenceData {
     std::vector<uint32_t> input_values;
@@ -158,7 +161,7 @@ VkDeviceSize compute_required_total_bytes(uint32_t logical_count) {
 
 uint32_t determine_logical_count(VkDeviceSize total_budget_bytes, uint32_t max_dispatch_groups_x) {
     const uint32_t max_group_count =
-        std::min(kWorkgroupSize, std::min(max_dispatch_groups_x, kTargetLogicalCount / kWorkgroupSize));
+        std::min({kMaxBlockScanElements, max_dispatch_groups_x, kTargetLogicalCount / kWorkgroupSize});
     for (uint32_t group_count = max_group_count; group_count > 0U; --group_count) {
         const uint32_t logical_count = group_count * kWorkgroupSize;
         if (compute_required_total_bytes(logical_count) <= total_budget_bytes) {
@@ -580,10 +583,11 @@ double run_atomic_pipeline(VulkanContext& context, const DescriptorResources& de
                            uint32_t valid_ratio_percent, uint32_t pattern_seed) {
     const uint32_t group_count_x = compute_block_count(logical_count);
     const PushConstants push_constants{
-        logical_count,
-        group_count_x,
-        valid_ratio_percent,
-        pattern_seed,
+        .element_count = logical_count,
+        .block_count = group_count_x,
+        .valid_ratio_percent = valid_ratio_percent,
+        .pattern_seed = pattern_seed,
+        .block_scan_items_per_thread = 1U,
     };
 
     return context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
@@ -601,11 +605,13 @@ double run_three_stage_pipeline(VulkanContext& context, const DescriptorResource
                                 const PipelineResources& stage3_pipeline, uint32_t logical_count,
                                 uint32_t valid_ratio_percent, uint32_t pattern_seed) {
     const uint32_t block_count = compute_block_count(logical_count);
+    const uint32_t block_scan_items_per_thread = (block_count + kWorkgroupSize - 1U) / kWorkgroupSize;
     const PushConstants push_constants{
-        logical_count,
-        block_count,
-        valid_ratio_percent,
-        pattern_seed,
+        .element_count = logical_count,
+        .block_count = block_count,
+        .valid_ratio_percent = valid_ratio_percent,
+        .pattern_seed = pattern_seed,
+        .block_scan_items_per_thread = block_scan_items_per_thread,
     };
 
     return context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
@@ -828,8 +834,8 @@ StreamCompactionExperimentOutput run_stream_compaction_experiment(VulkanContext&
     }
 
     const uint32_t block_count = compute_block_count(logical_count);
-    if (block_count > kWorkgroupSize) {
-        std::cerr << "Stream compaction experiment requires block_count <= " << kWorkgroupSize
+    if (block_count > kMaxBlockScanElements) {
+        std::cerr << "Stream compaction experiment requires block_count <= " << kMaxBlockScanElements
                   << " for the single-workgroup block scan stage.\n";
         output.all_points_correct = false;
         return output;

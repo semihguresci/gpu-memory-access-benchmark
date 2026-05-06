@@ -1,10 +1,10 @@
-﻿# Experiment 24: Stream Compaction
+# Experiment 24: Stream Compaction
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/24_stream_compaction.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

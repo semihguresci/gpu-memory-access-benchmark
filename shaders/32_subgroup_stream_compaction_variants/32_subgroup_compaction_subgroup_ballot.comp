@@ -1,3 +1,8 @@
+// Experiment 32: Subgroup Stream Compaction Variants
+// Shader role: subgroup compaction subgroup ballot.
+// What this experiment tests: block-local shared-atomic versus subgroup-ballot compaction.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 #extension GL_KHR_shader_subgroup_basic : require
@@ -71,6 +76,9 @@ void main() {
     barrier();
 
     if (valid) {
+        // This experiment intentionally compacts within each workgroup-sized
+        // block only. A separate prefix step would be needed to turn the
+        // per-block ranges into one globally compacted stream.
         const uint compact_index = subgroup_offsets[subgroup_index] + subgroup_rank;
         output_buffer.values[block_base + compact_index] = input_buffer.values[global_index];
     }
