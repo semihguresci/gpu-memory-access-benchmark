@@ -1,15 +1,25 @@
+// Experiment 35: Occupancy Modeling
+// Shader role: occupancy low shared-memory.
+// What this experiment tests: occupancy pressure from shared-memory footprint.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 // Occupancy modeling: low shared-memory variant.
 // Uses 256 x uint (1 KB) of shared memory so many workgroups can
-// co-reside on a single compute unit.
+// co-reside on a single compute unit while keeping the logical
+// per-element work identical to the medium/high variants.
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
+// Contract: one uint payload per logical element. All occupancy variants read
+// the same input stream so only shared-memory residency changes between files.
 layout(std430, binding = 0) readonly buffer InputBuffer {
     uint values[];
 } input_buffer;
 
+// Contract: one transformed uint per input element. This keeps the load/store
+// footprint and observable work constant across the low/medium/high variants.
 layout(std430, binding = 1) buffer OutputBuffer {
     uint values[];
 } output_buffer;

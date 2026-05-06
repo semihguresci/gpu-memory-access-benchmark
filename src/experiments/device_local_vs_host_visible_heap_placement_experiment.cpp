@@ -370,18 +370,26 @@ double run_readback_copy(VulkanContext& context, const BufferResource& src_buffe
 
 void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, uint32_t logical_count,
                        std::size_t scratch_size_bytes, double upload_ms, double readback_ms, bool correctness_pass,
-                       bool dispatch_ok) {
+                       bool timing_ok) {
     append_note(notes, std::string("placement=") + descriptor.variant_name);
     append_note(notes, "logical_elements=" + std::to_string(logical_count));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "scratch_size_bytes=" + std::to_string(static_cast<unsigned long long>(scratch_size_bytes)));
     append_note(notes,
                 "resident_buffer_count=" + std::to_string(descriptor.kind == VariantKind::HostVisibleDirect ? 2U : 4U));
+    append_note(notes, "gpu_time_scope=full_gpu_path");
+    append_note(notes, "end_to_end_scope=harness_wall_clock_includes_cpu_fill_validation");
     append_note(notes, "upload_ms=" + std::to_string(upload_ms));
     append_note(notes, "readback_ms=" + std::to_string(readback_ms));
     append_note(notes, "payload_bytes_per_element=8");
-    if (!dispatch_ok) {
-        append_note(notes, "dispatch_ms_non_finite");
+    if (!std::isfinite(upload_ms)) {
+        append_note(notes, "upload_ms_non_finite");
+    }
+    if (!std::isfinite(readback_ms)) {
+        append_note(notes, "readback_ms_non_finite");
+    }
+    if (!timing_ok) {
+        append_note(notes, "gpu_path_ms_non_finite");
     }
     if (!correctness_pass) {
         append_note(notes, "correctness_mismatch");
@@ -403,8 +411,8 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         return false;
     }
 
-    std::vector<double> dispatch_samples;
-    dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
+    std::vector<double> gpu_path_samples;
+    gpu_path_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
     const uint64_t payload_bytes = static_cast<uint64_t>(logical_count) * sizeof(uint32_t) * 2U;
 
     for (int warmup = 0; warmup < runner.warmup_iterations(); ++warmup) {
@@ -429,33 +437,37 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
                 run_dispatch(context, pipeline_resources, pipeline_resources.device_descriptor_set, logical_count);
             const double readback_ms =
                 run_readback_copy(context, buffers.device_dst_buffer, buffers.staging_dst_buffer);
-            const bool dispatch_ok =
-                std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
-            const bool data_ok = dispatch_ok && validate_input_values(staging_src_values, logical_count) &&
+            const bool timing_ok = std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+            const bool data_ok = timing_ok && validate_input_values(staging_src_values, logical_count) &&
                                  validate_output_values(staging_dst_values, reference_values);
             if (verbose_progress) {
                 std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/" << runner.warmup_iterations()
                           << " variant=" << descriptor.variant_name << ", upload_ms=" << upload_ms
                           << ", dispatch_ms=" << dispatch_ms << ", readback_ms=" << readback_ms
-                          << ", correctness=" << ((dispatch_ok && data_ok) ? "pass" : "fail") << "\n";
+                          << ", correctness=" << ((timing_ok && data_ok) ? "pass" : "fail") << "\n";
             }
         }
     }
 
     for (int iteration = 0; iteration < runner.timed_iterations(); ++iteration) {
+        // This wall-clock scope intentionally includes CPU fill and validation.
+        // The headline gpu_ms/gbps fields below use gpu_path_ms instead.
         const auto start = std::chrono::high_resolution_clock::now();
         double upload_ms = 0.0;
         double dispatch_ms = std::numeric_limits<double>::quiet_NaN();
         double readback_ms = 0.0;
+        double gpu_path_ms = std::numeric_limits<double>::quiet_NaN();
         bool correctness_pass = false;
+        bool timing_ok = false;
 
         if (descriptor.kind == VariantKind::HostVisibleDirect) {
             fill_input_values(host_src_values, logical_count);
             fill_output_values(host_dst_values, logical_count);
             dispatch_ms =
                 run_dispatch(context, pipeline_resources, pipeline_resources.host_descriptor_set, logical_count);
-            const bool dispatch_ok = std::isfinite(dispatch_ms);
-            correctness_pass = dispatch_ok && validate_input_values(host_src_values, logical_count) &&
+            timing_ok = std::isfinite(dispatch_ms);
+            gpu_path_ms = dispatch_ms;
+            correctness_pass = timing_ok && validate_input_values(host_src_values, logical_count) &&
                                validate_output_values(host_dst_values, reference_values);
         } else {
             fill_input_values(staging_src_values, logical_count);
@@ -464,21 +476,22 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
             dispatch_ms =
                 run_dispatch(context, pipeline_resources, pipeline_resources.device_descriptor_set, logical_count);
             readback_ms = run_readback_copy(context, buffers.device_dst_buffer, buffers.staging_dst_buffer);
-            const bool dispatch_ok =
-                std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
-            correctness_pass = dispatch_ok && validate_input_values(staging_src_values, logical_count) &&
+            timing_ok = std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+            if (timing_ok) {
+                gpu_path_ms = upload_ms + dispatch_ms + readback_ms;
+            }
+            correctness_pass = timing_ok && validate_input_values(staging_src_values, logical_count) &&
                                validate_output_values(staging_dst_values, reference_values);
         }
 
         const auto end = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> end_to_end_ms = end - start;
-        const bool dispatch_ok = std::isfinite(dispatch_ms);
         output.all_points_correct = output.all_points_correct && correctness_pass;
-        dispatch_samples.push_back(dispatch_ms);
+        gpu_path_samples.push_back(gpu_path_ms);
 
         std::string notes;
         record_case_notes(notes, descriptor, logical_count, scratch_size_bytes, upload_ms, readback_ms,
-                          correctness_pass, dispatch_ok);
+                          correctness_pass, timing_ok);
 
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
@@ -486,10 +499,10 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
             .problem_size = logical_count,
             .dispatch_count = kDispatchCount,
             .iteration = iteration,
-            .gpu_ms = dispatch_ms,
+            .gpu_ms = gpu_path_ms,
             .end_to_end_ms = end_to_end_ms.count(),
-            .throughput = compute_throughput_elements_per_second(logical_count, kDispatchCount, dispatch_ms),
-            .gbps = compute_effective_gbps_from_bytes(payload_bytes, dispatch_ms),
+            .throughput = compute_throughput_elements_per_second(logical_count, kDispatchCount, gpu_path_ms),
+            .gbps = compute_effective_gbps_from_bytes(payload_bytes, gpu_path_ms),
             .correctness_pass = correctness_pass,
             .notes = std::move(notes),
         });
@@ -497,7 +510,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
 
     output.summary_results.push_back(BenchmarkRunner::summarize_samples(
         std::string(kExperimentId) + "_" + descriptor.variant_name + "_elements_" + std::to_string(logical_count),
-        dispatch_samples));
+        gpu_path_samples));
     return true;
 }
 

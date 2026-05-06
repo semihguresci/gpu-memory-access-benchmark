@@ -34,7 +34,7 @@ Primary themes covered:
 
 ## 4. Investigation Set (01-12)
 Detailed lecture-note plans for each investigation live in:
-- `docs/10_advanced_investigation_plans_index.md`
+- `docs/advanced_investigation_plans_index.md`, with canonical files beside each experiment as `experiments/<id>/plan.md`
 
 Investigation list:
 1. Radix sort on GPU
@@ -79,19 +79,14 @@ Minimum outputs:
 
 Recommended folder shape:
 ```text
-advanced/NN_name/
+experiments/NN_name/
 |- README.md
-|- theory.md
-|- experiment_plan.md
-|- shader/
-|- src/
-|- configs/
+|- plan.md
+|- results.md
 |- results/
-|  |- raw/
-|  |- processed/
 |  |- charts/
-|  `- notes/
-`- conclusions.md
+|  `- tables/
+`- runs/
 ```
 
 ## 7. Interpretation Guardrails

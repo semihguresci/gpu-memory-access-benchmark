@@ -1,10 +1,10 @@
-﻿# Experiment 12: Gather Access Pattern
+# Experiment 12: Gather Access Pattern
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/12_gather_access_pattern.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

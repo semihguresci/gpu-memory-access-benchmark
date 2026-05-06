@@ -1,0 +1,115 @@
+// Experiment 44: GPU Driven Pipeline Blocks
+// Shader role: main path.
+// What this experiment tests: staged GPU-driven blocks versus fused dispatch.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Contract: canonical per-element source stream. Every mode starts from this
+// buffer so staged and fused variants differ only in how intermediates flow.
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+// Contract: stage-A output. Modes 0 and 3 write it; modes 1 and 2 consume the
+// stored visibility flag produced by an earlier dispatch or fused execution.
+layout(std430, binding = 1) buffer VisibilityBuffer {
+    uint values[];
+} visibility_buffer;
+
+// Contract: stage-B output. Visible elements receive a bucket id; invisible
+// elements carry 0xffffffff so later stages can skip them without recomputing.
+layout(std430, binding = 2) buffer BucketBuffer {
+    uint values[];
+} bucket_buffer;
+
+// Contract: final emitted token stream. Only the last stage or fused mode is
+// expected to populate this buffer with the pipeline's end product.
+layout(std430, binding = 3) buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint mode;
+    uint visibility_threshold_milli;
+    uint bucket_count;
+} push_constants;
+
+uint hash32(uint value) {
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    value ^= value >> 16u;
+    return value;
+}
+
+bool is_visible(uint input_value) {
+    const uint metric = hash32(input_value ^ 0x9e3779b9u) % 1000u;
+    return metric < push_constants.visibility_threshold_milli;
+}
+
+uint compute_bucket(uint input_value) {
+    return hash32(input_value ^ 0x85ebca6bu) % push_constants.bucket_count;
+}
+
+uint emit_token(uint input_value, uint bucket) {
+    const uint payload = hash32(input_value ^ 0xc2b2ae35u);
+    return ((bucket & 0xffu) << 24u) ^ (payload & 0x00ffffffu);
+}
+
+void main() {
+    const uint index_value = gl_GlobalInvocationID.x;
+    if (index_value >= push_constants.element_count) {
+        return;
+    }
+
+    const uint input_value = input_buffer.values[index_value];
+
+    if (push_constants.mode == 0u) {
+        // Stage A of the staged pipeline: visibility classification only.
+        // This isolates the cost of producing an intermediate visibility list.
+        visibility_buffer.values[index_value] = is_visible(input_value) ? 1u : 0u;
+        return;
+    }
+
+    if (push_constants.mode == 1u) {
+        // Stage B: consume the visibility result from a previous dispatch and
+        // assign each visible element to a coarse bucket. Invisible entries keep
+        // a sentinel so the next stage can skip them without recomputing.
+        const uint visible = visibility_buffer.values[index_value];
+        bucket_buffer.values[index_value] = (visible != 0u) ? compute_bucket(input_value) : 0xffffffffu;
+        return;
+    }
+
+    if (push_constants.mode == 2u) {
+        // Stage C: consume both earlier intermediates and emit the final token.
+        // This models a GPU-driven pipeline where later passes depend on data
+        // materialized by earlier dispatches instead of recomputing everything.
+        const uint visible = visibility_buffer.values[index_value];
+        if (visible != 0u) {
+            const uint bucket = bucket_buffer.values[index_value];
+            output_buffer.values[index_value] = emit_token(input_value, bucket);
+        } else {
+            output_buffer.values[index_value] = 0u;
+        }
+        return;
+    }
+
+    // Fused mode executes the full pipeline in one dispatch. Comparing this
+    // path against modes 0/1/2 shows the cost of splitting work into multiple
+    // GPU-driven blocks with intermediate buffer traffic between stages.
+    const bool visible = is_visible(input_value);
+    visibility_buffer.values[index_value] = visible ? 1u : 0u;
+    if (visible) {
+        const uint bucket = compute_bucket(input_value);
+        bucket_buffer.values[index_value] = bucket;
+        output_buffer.values[index_value] = emit_token(input_value, bucket);
+    } else {
+        bucket_buffer.values[index_value] = 0xffffffffu;
+        output_buffer.values[index_value] = 0u;
+    }
+}

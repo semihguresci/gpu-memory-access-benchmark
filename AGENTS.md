@@ -76,8 +76,33 @@ Target: production-quality Vulkan compute code in modern C++.
 - Use timestamp queries or fences intentionally; document what is being measured.
 - Validate assumptions with Vulkan validation layers during development.
 
+## Experiment Review Logic
+- Review experiment changes primarily for benchmark integrity, then for implementation quality and style.
+- Verify the experiment actually isolates the claimed independent variable:
+  - keep useful work, logical outputs, and validation semantics constant across variants unless the experiment explicitly studies those changes
+  - do not accept "occupancy", "shared memory", or "cache" variants that also change total loop work, memory traffic, or arithmetic volume in uncontrolled ways
+- Verify correctness is end-to-end and tied to measured runs:
+  - prefer per-iteration validation or a documented equivalent oracle
+  - do not accept correctness that is latched from a pre-run, inferred from unchanged inputs, or limited to one workgroup unless the experiment is explicitly scoped that way and documented
+  - for order-sensitive primitives (for example radix sort, scan, compaction), verify the algorithmic guarantees needed for correctness, such as stability or ordering rules
+- Verify metric accounting matches what the GPU work actually does:
+  - `throughput` and `gbps` must reflect measured or explicitly estimated payload/traffic, not placeholder formulas
+  - if a metric is based on an estimate rather than directly observed bytes, encode that in row notes and keep cross-variant comparisons apples-to-apples
+  - do not compare variants with different auxiliary traffic using a metric that only counts a subset of the work
+- Verify metadata and notes preserve CLI semantics:
+  - keep total scratch budget distinct from per-buffer/internal budgets
+  - do not record physical span, resident bytes, or one buffer's size as the user-facing scratch budget
+  - record variant parameters that are required to interpret the result, such as radix width, pass count, tile size, stride, alignment offset, and shared-memory footprint
+- Verify dispatch legality and resource assumptions against device limits:
+  - respect dispatch-dimension limits, workgroup-size limits, and relevant shared-memory limits
+  - fail clearly when the selected problem size or variant is illegal on the current device
+- Review analysis scripts and reports with the same rigor as runtime code:
+  - derived CSVs/charts must use the corrected metrics and metadata fields
+  - report text must not claim causality stronger than the experiment design supports
+
 ## Review Checklist
 - Builds successfully with current `CMakeLists.txt`.
 - No resource leaks (buffers, memory, descriptor sets/layouts, pipelines, query pools, fences, command pools).
 - New code follows existing style and naming.
 - Public interfaces are documented by clear names and straightforward signatures.
+- Experiment variants isolate the intended variable, correctness is end-to-end, and exported metrics/notes are interpretable.

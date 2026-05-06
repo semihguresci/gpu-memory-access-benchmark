@@ -1,3 +1,8 @@
+// Experiment 22: Prefix Sum Scan
+// Shader role: add offsets.
+// What this experiment tests: hierarchical prefix scan.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256) in;
@@ -24,8 +29,13 @@ void main() {
     const uint remaining = push_constants.element_count - base_element;
     const uint block_size = min(push_constants.block_elements, remaining);
     const uint stride = gl_WorkGroupSize.x;
+    // block_prefix_buffer stores inclusive block totals, so block N needs the
+    // previous block's total as its carry-in offset. Block 0 starts at zero.
     const uint block_offset = (block_index == 0U) ? 0U : block_prefix_buffer.values[block_index - 1U];
 
+    // Add the block carry to every element of the local scan. This turns the
+    // independent block scans produced by the first shader into a full-array
+    // inclusive scan.
     for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
         const uint shared_index = local_index + (item * stride);
         if (shared_index < block_size) {

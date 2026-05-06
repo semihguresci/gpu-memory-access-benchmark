@@ -1,10 +1,10 @@
-﻿# Experiment 11: Coalesced vs Strided Access
+# Experiment 11: Coalesced vs Strided Access
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/11_coalesced_vs_strided.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

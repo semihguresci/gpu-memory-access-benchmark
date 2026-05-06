@@ -23,9 +23,11 @@ using ExperimentMetrics::compute_throughput_elements_per_second;
 
 constexpr const char* kExperimentId = "22_prefix_sum_scan";
 constexpr uint32_t kWorkgroupSize = 256U;
-constexpr uint32_t kTargetLogicalCount = 65536U;
 constexpr uint32_t kMaxBlockElements = kWorkgroupSize * 8U;
-constexpr uint32_t kReferenceBlockCount = 256U;
+constexpr uint32_t kMaxBlockScanItemsPerThread = 12U;
+constexpr uint32_t kMaxBlockScanElements = kWorkgroupSize * kMaxBlockScanItemsPerThread;
+constexpr uint32_t kTargetLogicalCount = kMaxBlockScanElements * kWorkgroupSize;
+constexpr uint32_t kBlockScanScratchElements = 1U;
 constexpr uint32_t kDispatchCount = 3U;
 constexpr uint32_t kSourcePatternMultiplier = 17U;
 constexpr uint32_t kSourcePatternOffset = 23U;
@@ -104,25 +106,29 @@ void fill_sentinel_values(uint32_t* values, uint32_t element_count) {
 }
 
 uint32_t determine_logical_count(std::size_t max_buffer_bytes) {
-    const uint64_t fixed_overhead_bytes =
-        (static_cast<uint64_t>(kReferenceBlockCount) * sizeof(uint32_t) * 2U) + sizeof(uint32_t);
-    if (max_buffer_bytes <= fixed_overhead_bytes) {
+    if (max_buffer_bytes < (static_cast<std::size_t>(kMaxBlockElements) * sizeof(uint32_t) * 2U)) {
         return 0U;
     }
 
-    const uint64_t main_buffer_budget_bytes = static_cast<uint64_t>(max_buffer_bytes) - fixed_overhead_bytes;
-    const uint64_t buffer_elements = main_buffer_budget_bytes / (sizeof(uint32_t) * 2U);
-    if (buffer_elements < kMaxBlockElements) {
-        return 0U;
+    const uint64_t raw_main_buffer_limit = static_cast<uint64_t>(max_buffer_bytes) / (sizeof(uint32_t) * 2U);
+    uint64_t capped_elements = std::min<uint64_t>(raw_main_buffer_limit, static_cast<uint64_t>(kTargetLogicalCount));
+    capped_elements -= (capped_elements % kMaxBlockElements);
+
+    while (capped_elements >= kMaxBlockElements) {
+        const auto candidate_logical_count = static_cast<uint32_t>(capped_elements);
+        const uint32_t candidate_max_block_count = (candidate_logical_count + kWorkgroupSize - 1U) / kWorkgroupSize;
+        const uint64_t total_required_bytes =
+            (static_cast<uint64_t>(candidate_logical_count) * sizeof(uint32_t) * 2U) +
+            (static_cast<uint64_t>(candidate_max_block_count) * sizeof(uint32_t) * 2U) +
+            (static_cast<uint64_t>(kBlockScanScratchElements) * sizeof(uint32_t));
+        if (candidate_max_block_count <= kMaxBlockScanElements &&
+            total_required_bytes <= static_cast<uint64_t>(max_buffer_bytes)) {
+            return candidate_logical_count;
+        }
+        capped_elements -= kMaxBlockElements;
     }
 
-    const uint64_t capped_elements = std::min<uint64_t>(buffer_elements, static_cast<uint64_t>(kTargetLogicalCount));
-    const uint64_t rounded_elements = capped_elements - (capped_elements % kMaxBlockElements);
-    if (rounded_elements < kMaxBlockElements) {
-        return 0U;
-    }
-
-    return static_cast<uint32_t>(rounded_elements);
+    return 0U;
 }
 
 uint32_t compute_block_elements(uint32_t items_per_thread) {
@@ -135,6 +141,14 @@ uint32_t compute_block_count(uint32_t logical_count, uint32_t block_elements) {
     }
 
     return (logical_count + block_elements - 1U) / block_elements;
+}
+
+uint32_t compute_max_block_count(uint32_t logical_count) {
+    return compute_block_count(logical_count, compute_block_elements(kItemsPerThreadValues.front()));
+}
+
+uint32_t compute_block_scan_items_per_thread(uint32_t block_count) {
+    return compute_block_count(block_count, kWorkgroupSize);
 }
 
 VkDeviceSize compute_buffer_bytes(uint32_t element_count) {
@@ -198,8 +212,8 @@ bool validate_values(const uint32_t* actual_values, const std::vector<uint32_t>&
 bool create_buffer_resources(VulkanContext& context, uint32_t logical_count, uint32_t block_count,
                              BufferResources& out_resources) {
     const VkDeviceSize main_buffer_bytes = compute_buffer_bytes(logical_count);
-    const VkDeviceSize block_buffer_bytes = compute_buffer_bytes(std::max(block_count, kReferenceBlockCount));
-    const VkDeviceSize scratch_buffer_bytes = compute_buffer_bytes(1U);
+    const VkDeviceSize block_buffer_bytes = compute_buffer_bytes(block_count);
+    const VkDeviceSize scratch_buffer_bytes = compute_buffer_bytes(kBlockScanScratchElements);
 
     if (!create_buffer_resource(
             context.physical_device(), context.device(), main_buffer_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -603,17 +617,20 @@ double compute_effective_gbps(uint32_t logical_count, uint32_t block_count, doub
 }
 
 void append_case_notes(std::string& notes, uint32_t items_per_thread, uint32_t logical_count, uint32_t block_elements,
-                       uint32_t block_count, uint32_t scan_block_count, bool correctness_pass, bool dispatch_ok) {
+                       uint32_t block_count, uint32_t block_scan_items_per_thread, uint32_t max_block_count,
+                       bool correctness_pass, bool dispatch_ok) {
     append_note(notes, "scan_strategy=hierarchical_two_stage");
     append_note(notes, "inclusive_scan=true");
     append_note(notes, "workgroup_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "items_per_thread=" + std::to_string(items_per_thread));
     append_note(notes, "block_elements=" + std::to_string(block_elements));
     append_note(notes, "block_count=" + std::to_string(block_count));
-    append_note(notes, "scan_block_count=" + std::to_string(scan_block_count));
+    append_note(notes, "block_scan_items_per_thread=" + std::to_string(block_scan_items_per_thread));
+    append_note(notes, "block_scan_capacity=" + std::to_string(kMaxBlockScanElements));
     append_note(notes, "logical_elements=" + std::to_string(logical_count));
     append_note(notes, "dispatch_count=" + std::to_string(kDispatchCount));
-    append_note(notes, "block_totals_buffer_elements=" + std::to_string(kReferenceBlockCount));
+    append_note(notes, "throughput_scope=logical_scan_results");
+    append_note(notes, "block_buffer_elements=" + std::to_string(max_block_count));
     append_note(notes, "validation_mode=exact_uint32_wrapping");
     append_note(notes, "input_pattern=deterministic_affine_mod251");
     if (!dispatch_ok) {
@@ -626,11 +643,19 @@ void append_case_notes(std::string& notes, uint32_t items_per_thread, uint32_t l
 
 bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const BufferResources& buffers,
                  const ScanPipelineResources& scan_resources, const ApplyPipelineResources& apply_resources,
-                 uint32_t items_per_thread, uint32_t logical_count, PrefixSumScanExperimentOutput& output,
-                 bool verbose_progress) {
+                 uint32_t items_per_thread, uint32_t logical_count, uint32_t max_block_count,
+                 PrefixSumScanExperimentOutput& output, bool verbose_progress) {
     const uint32_t block_elements = compute_block_elements(items_per_thread);
     const uint32_t block_count = compute_block_count(logical_count, block_elements);
-    const uint32_t scan_block_count = compute_block_count(block_count, kWorkgroupSize);
+    const uint32_t block_scan_items_per_thread = compute_block_scan_items_per_thread(block_count);
+    if (block_scan_items_per_thread > kMaxBlockScanItemsPerThread) {
+        std::cerr << "[" << kExperimentId
+                  << "] Block scan capacity exceeded for variant=" << make_variant_name(items_per_thread)
+                  << ", block_count=" << block_count << ", required_items_per_thread=" << block_scan_items_per_thread
+                  << ", supported_block_scan_capacity=" << kMaxBlockScanElements << "\n";
+        return false;
+    }
+    const uint32_t block_scan_elements = compute_block_elements(block_scan_items_per_thread);
 
     const auto* input_values = static_cast<const uint32_t*>(buffers.input_mapped_ptr);
     auto* output_values = static_cast<uint32_t*>(buffers.output_mapped_ptr);
@@ -655,28 +680,28 @@ bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const Bu
     if (verbose_progress) {
         std::cout << "[" << kExperimentId << "] Case start: variant=" << variant_name
                   << ", logical_elements=" << logical_count << ", block_elements=" << block_elements
-                  << ", block_count=" << block_count << ", scan_block_count=" << scan_block_count
+                  << ", block_count=" << block_count << ", block_scan_items_per_thread=" << block_scan_items_per_thread
                   << ", warmup_iterations=" << runner.warmup_iterations()
                   << ", timed_iterations=" << runner.timed_iterations() << "\n";
     }
 
     const PushConstants main_push_constants{
-        logical_count,
-        block_elements,
-        block_count,
-        items_per_thread,
+        .element_count = logical_count,
+        .block_elements = block_elements,
+        .block_count = block_count,
+        .items_per_thread = items_per_thread,
     };
     const PushConstants block_push_constants{
-        block_count,
-        kWorkgroupSize,
-        1U,
-        1U,
+        .element_count = block_count,
+        .block_elements = block_scan_elements,
+        .block_count = 1U,
+        .items_per_thread = block_scan_items_per_thread,
     };
 
     for (int warmup = 0; warmup < runner.warmup_iterations(); ++warmup) {
         fill_sentinel_values(output_values, logical_count);
-        fill_sentinel_values(block_totals_values, std::max(block_count, kReferenceBlockCount));
-        fill_sentinel_values(block_prefix_values, std::max(block_count, kReferenceBlockCount));
+        fill_sentinel_values(block_totals_values, max_block_count);
+        fill_sentinel_values(block_prefix_values, max_block_count);
 
         const double dispatch_ms = context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
             vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, scan_resources.pipeline);
@@ -725,8 +750,8 @@ bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const Bu
         const auto start = std::chrono::high_resolution_clock::now();
 
         fill_sentinel_values(output_values, logical_count);
-        fill_sentinel_values(block_totals_values, std::max(block_count, kReferenceBlockCount));
-        fill_sentinel_values(block_prefix_values, std::max(block_count, kReferenceBlockCount));
+        fill_sentinel_values(block_totals_values, max_block_count);
+        fill_sentinel_values(block_prefix_values, max_block_count);
 
         const double dispatch_ms = context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
             vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, scan_resources.pipeline);
@@ -766,8 +791,8 @@ bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const Bu
         output.all_points_correct = output.all_points_correct && correctness_pass;
 
         std::string notes;
-        append_case_notes(notes, items_per_thread, logical_count, block_elements, block_count, scan_block_count,
-                          correctness_pass, dispatch_ok);
+        append_case_notes(notes, items_per_thread, logical_count, block_elements, block_count,
+                          block_scan_items_per_thread, max_block_count, correctness_pass, dispatch_ok);
 
         if (verbose_progress) {
             std::cout << "[" << kExperimentId << "] timed " << (iteration + 1) << "/" << runner.timed_iterations()
@@ -784,7 +809,7 @@ bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const Bu
             .iteration = iteration,
             .gpu_ms = dispatch_ms,
             .end_to_end_ms = end_to_end_ms.count(),
-            .throughput = compute_throughput_elements_per_second(logical_count, kDispatchCount, dispatch_ms),
+            .throughput = compute_throughput_elements_per_second(logical_count, 1U, dispatch_ms),
             .gbps = compute_effective_gbps(logical_count, block_count, dispatch_ms),
             .correctness_pass = correctness_pass,
             .notes = std::move(notes),
@@ -837,20 +862,20 @@ PrefixSumScanExperimentOutput run_prefix_sum_scan_experiment(VulkanContext& cont
 
     const uint32_t largest_block_elements = compute_block_elements(kItemsPerThreadValues.back());
     const uint32_t largest_block_count = compute_block_count(logical_count, largest_block_elements);
+    const uint32_t max_block_count = compute_max_block_count(logical_count);
 
     if (config.verbose_progress) {
         std::cout << "[" << kExperimentId << "] scan shader: " << scan_shader_path << "\n";
         std::cout << "[" << kExperimentId << "] add-offsets shader: " << add_offsets_shader_path << "\n";
         std::cout << "[" << kExperimentId << "] logical_outputs=" << logical_count
                   << ", largest_block_elements=" << largest_block_elements
-                  << ", largest_block_count=" << largest_block_count
+                  << ", largest_block_count=" << largest_block_count << ", max_block_count=" << max_block_count
                   << ", warmup_iterations=" << runner.warmup_iterations()
                   << ", timed_iterations=" << runner.timed_iterations() << "\n";
     }
 
     BufferResources buffers{};
-    if (!create_buffer_resources(context, logical_count, compute_block_count(logical_count, kWorkgroupSize * 8U),
-                                 buffers)) {
+    if (!create_buffer_resources(context, logical_count, max_block_count, buffers)) {
         destroy_buffer_resources(context, buffers);
         output.all_points_correct = false;
         return output;
@@ -870,8 +895,8 @@ PrefixSumScanExperimentOutput run_prefix_sum_scan_experiment(VulkanContext& cont
 
     fill_source_values(input_values, logical_count);
     fill_sentinel_values(output_values, logical_count);
-    fill_sentinel_values(block_totals_values, kReferenceBlockCount);
-    fill_sentinel_values(block_prefix_values, kReferenceBlockCount);
+    fill_sentinel_values(block_totals_values, max_block_count);
+    fill_sentinel_values(block_prefix_values, max_block_count);
 
     ScanPipelineResources scan_resources{};
     if (!create_scan_pipeline_resources(context, scan_shader_path, buffers, scan_resources)) {
@@ -892,7 +917,7 @@ PrefixSumScanExperimentOutput run_prefix_sum_scan_experiment(VulkanContext& cont
 
     for (const uint32_t items_per_thread : kItemsPerThreadValues) {
         if (!run_variant(context, runner, buffers, scan_resources, apply_resources, items_per_thread, logical_count,
-                         output, config.verbose_progress)) {
+                         max_block_count, output, config.verbose_progress)) {
             output.all_points_correct = false;
         }
     }

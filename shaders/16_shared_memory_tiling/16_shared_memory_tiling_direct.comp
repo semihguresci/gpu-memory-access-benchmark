@@ -1,3 +1,8 @@
+// Experiment 16: Shared Memory Tiling
+// Shader role: direct.
+// What this experiment tests: direct global access versus shared-memory tiling.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;

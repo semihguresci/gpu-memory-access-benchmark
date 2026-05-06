@@ -5,50 +5,13 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from pathlib import Path
 
-from experiment_manifest import ROOT, load_experiment_manifest
-
-
-EXPERIMENT_CONFIG = {
-    str(experiment["id"]): {
-        "output": ROOT / "experiments" / str(experiment["id"]) / "results" / "tables" / "benchmark_results.json",
-        "collect_script": ROOT / "experiments" / str(experiment["id"]) / "scripts" / "collect_run.py",
-        "default_size": str(experiment["default_size"]),
-    }
-    for experiment in load_experiment_manifest()
-    if bool(experiment["enabled"])
-}
-EXPERIMENT_IDS = tuple(EXPERIMENT_CONFIG)
+from experiment_manifest import ROOT
+from experiment_workflow import enabled_experiment_ids, load_enabled_experiment_configs, resolve_binary
 
 
-def _resolve_binary(explicit_path: str | None) -> Path:
-    if explicit_path:
-        binary = Path(explicit_path)
-        if not binary.is_absolute():
-            binary = (ROOT / binary).resolve()
-        if not binary.exists():
-            raise FileNotFoundError(f"Benchmark binary not found: {binary}")
-        return binary
-
-    candidates = [
-        ROOT / "build-tests-vs" / "Release" / "gpu_memory_layout_experiments.exe",
-        ROOT / "build-tests-vs" / "Debug" / "gpu_memory_layout_experiments.exe",
-        ROOT / "build" / "Release" / "gpu_memory_layout_experiments.exe",
-        ROOT / "build" / "Debug" / "gpu_memory_layout_experiments.exe",
-        ROOT / "build" / "windows-x64" / "Release" / "gpu_memory_layout_experiments.exe",
-        ROOT / "build" / "windows-x64" / "Debug" / "gpu_memory_layout_experiments.exe",
-        ROOT / "build" / "gpu_memory_layout_experiments.exe",
-        ROOT / "build" / "gpu_memory_layout_experiments",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-
-    raise FileNotFoundError(
-        "Could not find benchmark binary. Build first, for example:\n"
-        "  cmake --build build --config Release"
-    )
+EXPERIMENT_CONFIG = load_enabled_experiment_configs()
+EXPERIMENT_IDS = enabled_experiment_ids()
 
 
 def _run_command(args: list[str]) -> None:
@@ -112,15 +75,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    binary = _resolve_binary(args.binary)
+    binary = resolve_binary(args.binary)
     selected_experiment_ids = list(EXPERIMENT_IDS) if args.experiment == "all" else [args.experiment]
     print(f"[info] Running data collection for {len(selected_experiment_ids)} experiment(s).", flush=True)
 
     for experiment_id in selected_experiment_ids:
         config = EXPERIMENT_CONFIG[experiment_id]
-        output_path: Path = config["output"]
-        collect_script: Path = config["collect_script"]
-        selected_size: str = args.size if args.size is not None else str(config["default_size"])
+        output_path = config.output_path
+        collect_script = config.collect_script
+        selected_size = args.size if args.size is not None else config.default_size
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         print(f"[info] Experiment {experiment_id} (size={selected_size})", flush=True)

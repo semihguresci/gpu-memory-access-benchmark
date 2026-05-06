@@ -1,10 +1,10 @@
-﻿# Experiment 27: Cache Thrashing, Random vs Sequential
+# Experiment 27: Cache Thrashing, Random vs Sequential
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/27_cache_thrashing_random_vs_sequential.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

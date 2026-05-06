@@ -1,3 +1,8 @@
+// Experiment 24: Stream Compaction
+// Shader role: stage1 flag scan.
+// What this experiment tests: stream compaction pipeline structure.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -15,6 +20,7 @@ layout(push_constant) uniform PushConstants {
     uint block_count;
     uint valid_ratio_percent;
     uint pattern_seed;
+    uint block_scan_items_per_thread;
 } push_constants;
 
 shared uint shared_flags[256];
@@ -39,12 +45,17 @@ bool is_index_valid(uint index_value) {
 void main() {
     const uint index_value = gl_GlobalInvocationID.x;
     const uint local_index = gl_LocalInvocationID.x;
+    // Stage 1 converts the keep/discard predicate into a 0/1 stream. The scan
+    // over these flags assigns each surviving element a local position inside
+    // its workgroup.
     const bool in_bounds = index_value < push_constants.element_count;
     const uint flag_value = (in_bounds && is_index_valid(index_value)) ? 1u : 0u;
 
     shared_flags[local_index] = flag_value;
     barrier();
 
+    // Inclusive scan in shared memory. After the loop, shared_flags[i] is the
+    // number of valid elements in this block up to and including lane i.
     for (uint offset = 1u; offset < 256u; offset <<= 1u) {
         uint addend = 0u;
         if (local_index >= offset) {
@@ -56,10 +67,14 @@ void main() {
     }
 
     if (in_bounds) {
+        // Scatter wants an exclusive local prefix, so subtract the element's
+        // own flag. The first kept element in the block therefore lands at 0.
         local_prefix_buffer.values[index_value] = shared_flags[local_index] - flag_value;
     }
 
     if (local_index == 255u) {
+        // The final inclusive value is the total number of kept elements in
+        // this workgroup and becomes input to the block-prefix stage.
         block_counts_buffer.values[gl_WorkGroupID.x] = shared_flags[255];
     }
 }

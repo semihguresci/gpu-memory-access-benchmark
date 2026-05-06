@@ -84,9 +84,9 @@ This is the public-facing story the repository should emphasize:
   - Experiments 01-25 build execution, layout, access-pattern, synchronization, and primitive-level intuition
 - Extension track:
   - Experiments 26-33 strengthen the memory-access, memory-hierarchy, subgroup, and 2D-locality story
-  - Canonical plans live under `docs/experiment_plans/`
+  - Canonical plans live beside each experiment as `experiments/<id>/plan.md`
 - Advanced track:
-  - `docs/advanced_plans/` expands into rendering-adjacent and GPU systems investigations
+  - Experiments 34-45 expand into rendering-adjacent and GPU systems investigations
 
 ## Current Development Priorities
 

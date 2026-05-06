@@ -1,10 +1,10 @@
-﻿# Experiment 10: Scalar Type Width Sweep
+# Experiment 10: Scalar Type Width Sweep
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/10_scalar_type_width_sweep.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

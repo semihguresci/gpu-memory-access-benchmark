@@ -1,3 +1,8 @@
+// Experiment 34: Radix Sort GPU
+// Shader role: radix sort scan.
+// What this experiment tests: GPU radix-sort pipeline stages.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 // Prefix-scan pass for radix sort.
@@ -36,13 +41,17 @@ shared uint digit_totals[256];
 void main() {
     const uint d = gl_LocalInvocationID.x;
 
-    // Phase 1: each digit thread d scans across blocks, writing exclusive per-block prefix.
+    // Phase 1: one lane per digit walks the block histograms for that digit and
+    // writes an exclusive prefix for each block. This tells scatter how many
+    // same-digit keys appeared in earlier blocks.
     if (d < push_constants.radix_size) {
         uint running = 0u;
         for (uint b = 0u; b < push_constants.num_blocks; ++b) {
             block_prefix.values[d * push_constants.num_blocks + b] = running;
             running += histogram.values[d * push_constants.num_blocks + b];
         }
+        // Preserve the full digit population so phase 2 can stack the digit
+        // buckets themselves into one global address space.
         digit_totals[d] = running;
     } else {
         digit_totals[d] = 0u;
@@ -50,9 +59,9 @@ void main() {
 
     barrier();
 
-    // Phase 2: Blelloch inclusive prefix scan across all 256 shared slots.
-    // Entries at d >= radix_size start at 0 so they do not corrupt lower entries
-    // (scan adds from lower index to higher, never backwards).
+    // Phase 2: inclusive scan across digit totals. The result answers "how many
+    // keys belong to all earlier digits?" so every digit bucket gets a unique
+    // global start offset before scatter writes keys out.
     for (uint offset = 1u; offset < 256u; offset <<= 1u) {
         const uint addend = (d >= offset) ? digit_totals[d - offset] : 0u;
         barrier();
@@ -60,7 +69,9 @@ void main() {
         barrier();
     }
 
-    // Phase 3: convert inclusive to exclusive and write digit start positions.
+    // Phase 3: convert the inclusive scan into exclusive digit starts. Digit 0
+    // begins at element 0; every later digit starts where the previous digit's
+    // total prefix ended.
     if (d < push_constants.radix_size) {
         digit_starts.values[d] = (d == 0u) ? 0u : digit_totals[d - 1u];
     }

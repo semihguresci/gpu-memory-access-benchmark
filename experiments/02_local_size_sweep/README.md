@@ -1,10 +1,10 @@
-﻿# Experiment 02: Local Size Sweep
+# Experiment 02: Local Size Sweep
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/02_local_size_sweep.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

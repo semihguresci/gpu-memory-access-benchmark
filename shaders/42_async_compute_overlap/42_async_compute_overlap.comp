@@ -1,0 +1,77 @@
+// Experiment 42: Async Compute Overlap
+// Shader role: main path.
+// What this experiment tests: serial passes versus fused overlap proxy.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Contract: input stream for logical pass A. In fused mode this is consumed in
+// the same dispatch as pass B; in staged mode it is written independently.
+layout(std430, binding = 0) readonly buffer InputABuffer {
+    uint values[];
+} input_a_buffer;
+
+// Contract: input stream for logical pass B. It remains independent from pass
+// A so the experiment isolates dispatch composition, not data dependency.
+layout(std430, binding = 1) readonly buffer InputBBuffer {
+    uint values[];
+} input_b_buffer;
+
+// Contract: materialized results for pass A, whether produced by the dedicated
+// pass-A dispatch or by the fused path.
+layout(std430, binding = 2) buffer OutputABuffer {
+    uint values[];
+} output_a_buffer;
+
+// Contract: materialized results for pass B, whether produced by the dedicated
+// pass-B dispatch or by the fused path.
+layout(std430, binding = 3) buffer OutputBBuffer {
+    uint values[];
+} output_b_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint mode; // 0=pass_a, 1=pass_b, 2=fused
+    uint reserved0;
+    uint reserved1;
+} push_constants;
+
+uint transform_a(uint value) {
+    uint state = value;
+    state ^= state >> 16u;
+    state *= 0x7feb352du;
+    state ^= state >> 15u;
+    state *= 0x846ca68bu;
+    state ^= state >> 16u;
+    return state;
+}
+
+uint transform_b(uint value) {
+    uint state = value;
+    state ^= (state << 13u);
+    state ^= (state >> 17u);
+    state ^= (state << 5u);
+    return state * 1664525u + 1013904223u;
+}
+
+void main() {
+    const uint index_value = gl_GlobalInvocationID.x;
+    if (index_value >= push_constants.element_count) {
+        return;
+    }
+
+    if (push_constants.mode == 0u) {
+        output_a_buffer.values[index_value] = transform_a(input_a_buffer.values[index_value]);
+        return;
+    }
+
+    if (push_constants.mode == 1u) {
+        output_b_buffer.values[index_value] = transform_b(input_b_buffer.values[index_value]);
+        return;
+    }
+
+    output_a_buffer.values[index_value] = transform_a(input_a_buffer.values[index_value]);
+    output_b_buffer.values[index_value] = transform_b(input_b_buffer.values[index_value]);
+}

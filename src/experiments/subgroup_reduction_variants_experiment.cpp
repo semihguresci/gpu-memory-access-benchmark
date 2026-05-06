@@ -29,7 +29,7 @@ constexpr uint32_t kInputPatternOffset = 23U;
 constexpr uint32_t kInputPatternModulus = 251U;
 constexpr uint32_t kOutputSentinelValue = 0U;
 constexpr std::array<uint32_t, 6> kCandidateProblemSizes = {
-    65536U, 262144U, 1048576U, 4194304U, 16777216U, 33554432U,
+    655360U, 2621440U, 10485760U, 41943040U, 167772160U, 335544320U,
 };
 
 enum class VariantKind : uint32_t {

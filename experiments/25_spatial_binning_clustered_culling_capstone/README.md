@@ -1,10 +1,10 @@
-﻿# Experiment 25: Spatial Binning or Clustered Culling Capstone
+# Experiment 25: Spatial Binning or Clustered Culling Capstone
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/25_spatial_binning_clustered_culling_capstone.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

@@ -26,7 +26,7 @@ constexpr uint32_t kWorkgroupSize = 256U;
 constexpr uint32_t kDispatchCount = 1U;
 
 constexpr std::array<uint32_t, 6> kCandidateProblemSizes = {
-    65536U, 262144U, 1048576U, 4194304U, 16777216U, 33554432U,
+    655360U, 2621440U, 10485760U, 41943040U, 167772160U, 335544320U,
 };
 
 enum class VariantKind : uint32_t {
@@ -88,15 +88,13 @@ VkDeviceSize compute_buffer_span_bytes(uint32_t element_count) {
 bool create_buffer_resources(VulkanContext& context, uint32_t max_problem_size, BufferResources& out_resources) {
     const VkDeviceSize span = compute_buffer_span_bytes(max_problem_size);
 
-    if (!create_buffer_resource(context.physical_device(), context.device(), span,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    if (!create_buffer_resource(context.physical_device(), context.device(), span, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                 out_resources.input_buffer)) {
         std::cerr << "[" << kExperimentId << "] Failed to create input buffer.\n";
         return false;
     }
-    if (!create_buffer_resource(context.physical_device(), context.device(), span,
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    if (!create_buffer_resource(context.physical_device(), context.device(), span, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                 out_resources.output_buffer)) {
         std::cerr << "[" << kExperimentId << "] Failed to create output buffer.\n";
@@ -138,6 +136,9 @@ void destroy_buffer_resources(VulkanContext& context, BufferResources& resources
 void update_descriptor_set(VulkanContext& context, const BufferResources& buffers, VkDescriptorSet descriptor_set) {
     const VkDescriptorBufferInfo input_info{buffers.input_buffer.buffer, 0U, buffers.input_buffer.size};
     const VkDescriptorBufferInfo output_info{buffers.output_buffer.buffer, 0U, buffers.output_buffer.size};
+    // Shader binding contract:
+    //   0 -> canonical input stream shared by every occupancy variant
+    //   1 -> one transformed uint per logical element
     VulkanComputeUtils::update_descriptor_set_buffers(
         context.device(), descriptor_set,
         {{0U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, input_info}, {1U, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, output_info}});
@@ -167,7 +168,8 @@ bool create_pipeline_resources(VulkanContext& context, const std::string& shader
     }
 
     if (!VulkanComputeUtils::allocate_descriptor_set(context.device(), out_resources.descriptor_pool,
-                                                     out_resources.descriptor_set_layout, out_resources.descriptor_set)) {
+                                                     out_resources.descriptor_set_layout,
+                                                     out_resources.descriptor_set)) {
         std::cerr << "[" << kExperimentId << "] Failed to allocate descriptor set.\n";
         return false;
     }
@@ -220,6 +222,8 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
     if (group_count_x == 0U) {
         return std::numeric_limits<double>::quiet_NaN();
     }
+    // The shader variant itself encodes the shared-memory footprint. Host-side
+    // push constants carry only the logical problem size.
     const PushConstants push_constants{element_count};
     return context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_resources.pipeline);
@@ -236,8 +240,8 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     append_note(notes, std::string("variant=") + descriptor.variant_name);
     append_note(notes, "element_count=" + std::to_string(element_count));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
-    append_note(notes,
-                "group_count_x=" + std::to_string(VulkanComputeUtils::compute_group_count_1d(element_count, kWorkgroupSize)));
+    append_note(notes, "group_count_x=" +
+                           std::to_string(VulkanComputeUtils::compute_group_count_1d(element_count, kWorkgroupSize)));
     append_note(notes, "smem_bytes_per_workgroup=" + std::to_string(descriptor.smem_bytes));
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
@@ -247,103 +251,62 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     }
 }
 
-// CPU reference implementations matching the GPU shaders.
-// We validate the first workgroup's output (elements 0..min(255, element_count-1)).
-// Input reads beyond element_count return 0 (matching the GPU bounds check).
+// CPU reference implementation matching the logical kernel shared by all three
+// occupancy variants. The shared-memory footprint changes by shader, but the
+// useful work stays fixed at one read and one write per element.
 
 uint32_t safe_read(const uint32_t* input, uint32_t index, uint32_t element_count) {
     return (index < element_count) ? input[index] : 0U;
 }
 
-// Matches 35_occupancy_low_smem.comp:
-//   scratch[local] = input[global];
-//   result = scratch[(local+1)%256] ^ (scratch[local] * 1664525 + 1013904223)
-bool validate_low_smem(const uint32_t* input, const uint32_t* output, uint32_t element_count) {
-    const uint32_t wg_base = 0U;
-    for (uint32_t local = 0U; local < std::min(kWorkgroupSize, element_count); ++local) {
-        const uint32_t rotated = (local + 1U) % kWorkgroupSize;
-        const uint32_t my_val = safe_read(input, wg_base + local, element_count);
-        const uint32_t peer_val = safe_read(input, wg_base + rotated, element_count);
-        const uint32_t expected = peer_val ^ (my_val * 1664525U + 1013904223U);
-        if (output[local] != expected) {
-            return false;
-        }
-    }
-    return true;
+uint32_t compute_expected_output_value(const uint32_t* input, uint32_t element_count, uint32_t global_id) {
+    const uint32_t local_id = global_id % kWorkgroupSize;
+    const uint32_t workgroup_base = global_id - local_id;
+    const uint32_t rotated_index = workgroup_base + ((local_id + 1U) % kWorkgroupSize);
+    const uint32_t my_value = safe_read(input, global_id, element_count);
+    const uint32_t peer_value = safe_read(input, rotated_index, element_count);
+    return peer_value ^ (my_value * 1664525U + 1013904223U);
 }
 
-// Matches 35_occupancy_medium_smem.comp (scratch size = 2048):
-//   scratch[slot] = input[wg_base + slot] for slot in [local, local+256, ..., < 2048]
-//   acc = 0; for slot in [local, local+256, ..., <2048]: peer=(slot+256)%2048; acc=scratch[peer]^(acc*1664525+1013904223)
-bool validate_medium_smem(const uint32_t* input, const uint32_t* output, uint32_t element_count) {
-    constexpr uint32_t kScratchSize = 2048U;
-    const uint32_t wg_base = 0U;
-    std::vector<uint32_t> scratch(kScratchSize);
-    for (uint32_t slot = 0U; slot < kScratchSize; ++slot) {
-        scratch[slot] = safe_read(input, wg_base + slot, element_count);
+std::vector<uint32_t> build_reference_output(const uint32_t* input, uint32_t element_count) {
+    std::vector<uint32_t> reference_output(element_count);
+    for (uint32_t global_id = 0U; global_id < element_count; ++global_id) {
+        reference_output[global_id] = compute_expected_output_value(input, element_count, global_id);
     }
-    for (uint32_t local = 0U; local < std::min(kWorkgroupSize, element_count); ++local) {
-        uint32_t acc = 0U;
-        for (uint32_t slot = local; slot < kScratchSize; slot += kWorkgroupSize) {
-            const uint32_t peer = (slot + kWorkgroupSize) % kScratchSize;
-            acc = scratch[peer] ^ (acc * 1664525U + 1013904223U);
-        }
-        if (output[local] != acc) {
-            return false;
-        }
-    }
-    return true;
+    return reference_output;
 }
 
-// Matches 35_occupancy_high_smem.comp (scratch size = 8192):
-bool validate_high_smem(const uint32_t* input, const uint32_t* output, uint32_t element_count) {
-    constexpr uint32_t kScratchSize = 8192U;
-    const uint32_t wg_base = 0U;
-    std::vector<uint32_t> scratch(kScratchSize);
-    for (uint32_t slot = 0U; slot < kScratchSize; ++slot) {
-        scratch[slot] = safe_read(input, wg_base + slot, element_count);
-    }
-    for (uint32_t local = 0U; local < std::min(kWorkgroupSize, element_count); ++local) {
-        uint32_t acc = 0U;
-        for (uint32_t slot = local; slot < kScratchSize; slot += kWorkgroupSize) {
-            const uint32_t peer = (slot + kWorkgroupSize) % kScratchSize;
-            acc = scratch[peer] ^ (acc * 1664525U + 1013904223U);
-        }
-        if (output[local] != acc) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool validate_output(const VariantDescriptor& descriptor, const uint32_t* input, const uint32_t* output,
-                     uint32_t element_count) {
-    switch (descriptor.kind) {
-    case VariantKind::LowSmem:
-        return validate_low_smem(input, output, element_count);
-    case VariantKind::MediumSmem:
-        return validate_medium_smem(input, output, element_count);
-    case VariantKind::HighSmem:
-        return validate_high_smem(input, output, element_count);
-    default:
+bool validate_output(const uint32_t* output, const std::vector<uint32_t>& reference_output) {
+    if (output == nullptr || reference_output.empty()) {
         return false;
     }
+    for (std::size_t index = 0; index < reference_output.size(); ++index) {
+        if (output[index] != reference_output[index]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const BufferResources& buffers,
               const PipelineResources& pipeline_resources, const VariantDescriptor& descriptor, uint32_t element_count,
               OccupancyModelingExperimentOutput& output, bool verbose_progress) {
     auto* input_values = static_cast<uint32_t*>(buffers.input_mapped_ptr);
+    const auto* output_values = static_cast<const uint32_t*>(buffers.output_mapped_ptr);
     if (input_values == nullptr) {
         std::cerr << "[" << kExperimentId << "] Null input pointer for variant=" << descriptor.variant_name << "\n";
+        return false;
+    }
+    if (output_values == nullptr) {
+        std::cerr << "[" << kExperimentId << "] Null output pointer for variant=" << descriptor.variant_name << "\n";
         return false;
     }
     for (uint32_t i = 0U; i < element_count; ++i) {
         input_values[i] = input_pattern_value(i);
     }
+    const std::vector<uint32_t> reference_output = build_reference_output(input_values, element_count);
 
-    const uint64_t payload_bytes =
-        static_cast<uint64_t>(element_count) * sizeof(uint32_t) * 2ULL; // read + write
+    const uint64_t payload_bytes = static_cast<uint64_t>(element_count) * sizeof(uint32_t) * 2ULL; // read + write
 
     std::vector<double> dispatch_samples;
     dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
@@ -351,24 +314,11 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
     for (int warmup = 0; warmup < runner.warmup_iterations(); ++warmup) {
         const double ms = run_dispatch(context, pipeline_resources, element_count);
         if (verbose_progress) {
+            const bool dispatch_ok = std::isfinite(ms);
+            const bool correctness_pass = dispatch_ok && validate_output(output_values, reference_output);
             std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1) << "/" << runner.warmup_iterations()
-                      << " variant=" << descriptor.variant_name << " n=" << element_count << " ms=" << ms << "\n";
-        }
-    }
-
-    // Run one pre-validation dispatch (validates first workgroup's output against CPU reference).
-    bool first_dispatch_correct = false;
-    {
-        const double ms = run_dispatch(context, pipeline_resources, element_count);
-        if (std::isfinite(ms)) {
-            const auto* output_values = static_cast<const uint32_t*>(buffers.output_mapped_ptr);
-            if (output_values != nullptr) {
-                first_dispatch_correct = validate_output(descriptor, input_values, output_values, element_count);
-            }
-            if (!first_dispatch_correct) {
-                std::cerr << "[" << kExperimentId << "] Correctness check failed for variant="
-                          << descriptor.variant_name << " n=" << element_count << "\n";
-            }
+                      << " variant=" << descriptor.variant_name << " n=" << element_count << " ms=" << ms
+                      << " correct=" << (correctness_pass ? "pass" : "fail") << "\n";
         }
     }
 
@@ -379,9 +329,14 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         const std::chrono::duration<double, std::milli> e2e_ms = end - start;
 
         const bool dispatch_ok = std::isfinite(dispatch_ms);
-        const bool correctness_pass = dispatch_ok && first_dispatch_correct;
+        const bool correctness_pass = dispatch_ok && validate_output(output_values, reference_output);
         output.all_points_correct = output.all_points_correct && correctness_pass;
         dispatch_samples.push_back(dispatch_ms);
+
+        if (dispatch_ok && !correctness_pass) {
+            std::cerr << "[" << kExperimentId << "] Correctness check failed for variant=" << descriptor.variant_name
+                      << " n=" << element_count << " iteration=" << iteration << "\n";
+        }
 
         std::string notes;
         record_case_notes(notes, descriptor, element_count, correctness_pass, dispatch_ok);
@@ -431,9 +386,9 @@ std::vector<uint32_t> build_problem_sizes(std::size_t max_buffer_bytes, uint32_t
 
 } // namespace
 
-OccupancyModelingExperimentOutput
-run_occupancy_modeling_experiment(VulkanContext& context, const BenchmarkRunner& runner,
-                                  const OccupancyModelingExperimentConfig& config) {
+OccupancyModelingExperimentOutput run_occupancy_modeling_experiment(VulkanContext& context,
+                                                                    const BenchmarkRunner& runner,
+                                                                    const OccupancyModelingExperimentConfig& config) {
     OccupancyModelingExperimentOutput output{};
 
     if (!context.gpu_timestamps_supported()) {

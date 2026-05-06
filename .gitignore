@@ -1,29 +1,44 @@
-build/
-.vs/
+# Build directories and CMake outputs
+/build/
+/build*/
+/build_cli11/
+/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# IDE and editor state
+/.vs/
+.vscode/
+.idea/
 *.user
 *.suo
+
+# Compiled outputs and shader artifacts
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.obj
+*.o
+*.a
+*.so
+*.dylib
 *.spv
-results/tables/*.csv
-results/tables/*.json
-!results/tables/.gitkeep
-!results/charts/.gitkeep
-/build_cli11
 
-# Experiment-local generated artifacts
-experiments/*/results/charts/*
-experiments/*/results/tables/*
-experiments/*/runs/*
-experiments/*/runs/**/*
-!experiments/*/results/charts/.gitkeep
-!experiments/*/results/tables/.gitkeep
-!experiments/*/runs/.gitkeep
+# Benchmark/generated result artifacts
+/results/
+/experiments/*/results/
+/experiments/*/runs/
 
-# Local archive for moved benchmark artifacts
-local_artifacts/
-/build-clang-mingw
-/build-clang-ninja
-/build-clang-ninja-make
-/build-tests
-/build-tests-vs
+# Local archives and scratch data
+/local_artifacts/
+/tmp/
+/temp/
+
+# Python caches
 __pycache__/
 *.pyc
+.pytest_cache/

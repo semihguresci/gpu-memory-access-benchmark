@@ -1,19 +1,21 @@
 #include "experiments/experiment_contract.hpp"
 #include "experiments/subgroup_reduction_variants_experiment.hpp"
 #include "utils/app_options.hpp"
+#include "utils/scratch_buffer_budget.hpp"
 
 #include <utility>
 
 bool run_subgroup_reduction_variants_experiment_adapter(VulkanContext& context, const BenchmarkRunner& runner,
                                                         const AppOptions& options, ExperimentRunOutput& output) {
-    SubgroupReductionVariantsExperimentOutput experiment_output =
-        run_subgroup_reduction_variants_experiment(context, runner,
-                                                   SubgroupReductionVariantsExperimentConfig{
-                                                       .max_buffer_bytes = options.scratch_size_bytes,
-                                                       .shared_tree_shader_path = "",
-                                                       .subgroup_hybrid_shader_path = "",
-                                                       .verbose_progress = options.verbose_progress,
-                                                   });
+    SubgroupReductionVariantsExperimentOutput experiment_output = run_subgroup_reduction_variants_experiment(
+        context, runner,
+        SubgroupReductionVariantsExperimentConfig{
+            .max_buffer_bytes = static_cast<std::size_t>(
+                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 2U)),
+            .shared_tree_shader_path = "",
+            .subgroup_hybrid_shader_path = "",
+            .verbose_progress = options.verbose_progress,
+        });
 
     output.summary_results = std::move(experiment_output.summary_results);
     output.rows = std::move(experiment_output.rows);

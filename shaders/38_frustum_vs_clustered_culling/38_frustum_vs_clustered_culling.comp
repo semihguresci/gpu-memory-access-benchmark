@@ -1,0 +1,65 @@
+// Experiment 38: Frustum Vs Clustered Culling
+// Shader role: main path.
+// What this experiment tests: frustum versus clustered culling strategy.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
+#version 450
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Contract: one record per entity. xyz is the test position and w carries the
+// entity id that will be emitted into the visible-id stream when kept.
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    vec4 records[];
+} input_buffer;
+
+// Contract: counter slot 0 stores the visible-list count. In clustered mode,
+// slots [1, 1 + cluster_count) accumulate per-cluster visible counts.
+layout(std430, binding = 1) buffer CounterBuffer {
+    uint values[];
+} counter_buffer;
+
+// Contract: compact visible entity ids written in discovery order, truncated
+// to max_visible_entries so the host can bound output storage explicitly.
+layout(std430, binding = 2) buffer VisibleIdBuffer {
+    uint values[];
+} visible_id_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint entity_count;
+    uint culling_mode;
+    uint cluster_count;
+    uint max_visible_entries;
+} push_constants;
+
+bool is_visible(vec3 position_value) {
+    return abs(position_value.x) <= 0.8 && abs(position_value.y) <= 0.8 && position_value.z <= 0.9;
+}
+
+uint compute_cluster_index(float position_z) {
+    const float clamped_z = clamp(position_z, 0.0, 0.999999);
+    const uint index_value = uint(clamped_z * float(push_constants.cluster_count));
+    return min(index_value, push_constants.cluster_count - 1u);
+}
+
+void main() {
+    const uint index_value = gl_GlobalInvocationID.x;
+    if (index_value >= push_constants.entity_count) {
+        return;
+    }
+
+    const vec4 record_value = input_buffer.records[index_value];
+    if (!is_visible(record_value.xyz)) {
+        return;
+    }
+
+    const uint visible_slot = atomicAdd(counter_buffer.values[0], 1u);
+    if (visible_slot < push_constants.max_visible_entries) {
+        visible_id_buffer.values[visible_slot] = uint(record_value.w);
+    }
+
+    if (push_constants.culling_mode == 1u) {
+        const uint cluster_index = compute_cluster_index(record_value.z);
+        atomicAdd(counter_buffer.values[1u + cluster_index], 1u);
+    }
+}

@@ -44,7 +44,7 @@ flowchart TD
         E --> T["results/tables/*.csv"]
         E --> U["results/charts/*"]
         E --> V["experiments/<id>/results.md"]
-        F --> W["docs/core_experiment_plans_index.md"]
+        F --> W["experiments/<id>/plan.md"]
     end
 
     subgraph Validation["Validation"]
@@ -232,11 +232,12 @@ To add a new experiment:
 
 ## Experiment Documentation Policy
 
-Canonical experiment specifications live in `docs/experiment_plans/`.
+Canonical experiment specifications live beside each experiment as `experiments/<id>/plan.md`.
 
-Experiment folders should stay lightweight:
+Experiment folders should keep the local benchmark story together:
 
 - keep `README.md` as a thin local index
+- keep `plan.md` as the canonical experiment specification
 - keep `results.md` as the experiment-local measured report
 - keep generated artifacts under `results/`
 - keep archived exports under `runs/`

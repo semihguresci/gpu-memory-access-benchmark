@@ -1,3 +1,8 @@
+// Experiment 22: Prefix Sum Scan
+// Shader role: scan.
+// What this experiment tests: hierarchical prefix scan.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256) in;
@@ -21,17 +26,24 @@ layout(push_constant) uniform PushConstants {
     uint items_per_thread;
 } push_constants;
 
-shared uint scan_ping[2048];
-shared uint scan_pong[2048];
+const uint kMaxScanElements = 3072U;
+
+shared uint scan_ping[kMaxScanElements];
+shared uint scan_pong[kMaxScanElements];
 
 void main() {
     const uint local_index = gl_LocalInvocationID.x;
     const uint block_index = gl_WorkGroupID.x;
+    // Each workgroup owns one contiguous block of the global array.
+    // A later pass will stitch these block-local scans together.
     const uint base_element = block_index * push_constants.block_elements;
     const uint remaining = push_constants.element_count - base_element;
     const uint block_size = min(push_constants.block_elements, remaining);
     const uint stride = gl_WorkGroupSize.x;
 
+    // Load one block into shared memory in a striped pattern so a 256-lane
+    // workgroup can cover more than 256 elements. Out-of-range lanes inject 0
+    // so the same scan loop handles partial tail blocks safely.
     for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
         const uint shared_index = local_index + (item * stride);
         uint value = 0U;
@@ -44,6 +56,10 @@ void main() {
 
     barrier();
 
+    // Hillis-Steele style scan across the shared block. The ping/pong buffers
+    // avoid read-after-write hazards because each offset step must read the
+    // previous iteration's state, not values updated by neighboring lanes in
+    // the current iteration.
     bool read_ping = true;
     for (uint offset = 1U; offset < push_constants.block_elements; offset <<= 1U) {
         for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
@@ -66,6 +82,9 @@ void main() {
         read_ping = !read_ping;
     }
 
+    // Write the inclusive scan back to global memory. The last active element
+    // in the block is also the block total, which becomes input to the next
+    // level of the hierarchical scan on the CPU/GPU orchestration side.
     for (uint item = 0U; item < push_constants.items_per_thread; ++item) {
         const uint shared_index = local_index + (item * stride);
         if (shared_index < block_size) {

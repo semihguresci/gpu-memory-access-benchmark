@@ -1,10 +1,10 @@
-﻿# Experiment 04: Sequential Indexing
+# Experiment 04: Sequential Indexing
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/04_sequential_indexing.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

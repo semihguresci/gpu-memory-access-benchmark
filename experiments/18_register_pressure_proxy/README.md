@@ -1,10 +1,10 @@
-﻿# Experiment 18: Register Pressure Proxy
+# Experiment 18: Register Pressure Proxy
 
 ## Folder Role
 This folder stores experiment-local artifacts, run archives, and helper scripts for this benchmark.
 
 ## Canonical Documents
-- [Experiment plan](../../docs/experiment_plans/18_register_pressure_proxy.md)
+- [Experiment plan](plan.md)
 - [Results report](results.md)
 
 ## Local Contents

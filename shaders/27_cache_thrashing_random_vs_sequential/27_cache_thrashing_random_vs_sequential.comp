@@ -1,3 +1,8 @@
+// Experiment 27: Cache Thrashing Random Vs Sequential
+// Shader role: main path.
+// What this experiment tests: cache thrashing from random versus sequential walks.
+// Reading tip: This folder has one shader; host-side push constants, input patterns, or memory placement usually select the case.
+
 #version 450
 
 layout(local_size_x = 256) in;

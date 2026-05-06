@@ -102,21 +102,21 @@ def _build_relative(summary: pd.DataFrame) -> pd.DataFrame:
         }
     )
     relative = summary.merge(baseline, on="problem_size", how="inner")
-    relative["slowdown_vs_host_visible_dispatch"] = relative["gpu_ms_median"] / relative["baseline_gpu_ms_median"]
-    relative["slowdown_vs_host_visible_end_to_end"] = (
+    relative["slowdown_vs_host_visible_gpu_path"] = relative["gpu_ms_median"] / relative["baseline_gpu_ms_median"]
+    relative["slowdown_vs_host_visible_harness_wall_clock"] = (
         relative["end_to_end_ms_median"] / relative["baseline_end_to_end_ms_median"]
     )
-    relative["dispatch_gbps_ratio_vs_host_visible"] = relative["gbps_median"] / relative["baseline_gbps_median"]
+    relative["gpu_path_gbps_ratio_vs_host_visible"] = relative["gbps_median"] / relative["baseline_gbps_median"]
     return relative[
         [
             "variant",
             "problem_size",
             "gpu_ms_median",
             "end_to_end_ms_median",
-            "slowdown_vs_host_visible_dispatch",
-            "slowdown_vs_host_visible_end_to_end",
+            "slowdown_vs_host_visible_gpu_path",
+            "slowdown_vs_host_visible_harness_wall_clock",
             "gbps_median",
-            "dispatch_gbps_ratio_vs_host_visible",
+            "gpu_path_gbps_ratio_vs_host_visible",
             "upload_ms_median",
             "readback_ms_median",
         ]

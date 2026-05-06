@@ -1,3 +1,8 @@
+// Experiment 32: Subgroup Stream Compaction Variants
+// Shader role: subgroup compaction shared atomic.
+// What this experiment tests: block-local shared-atomic versus subgroup-ballot compaction.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
@@ -51,6 +56,8 @@ void main() {
 
     const bool valid = global_index < push_constants.logical_count && is_index_valid(global_index);
     if (valid) {
+        // Block-local compaction primitive: each workgroup writes its own
+        // compacted range at block_base. There is no global prefix pass here.
         const uint compact_index = atomicAdd(shared_count, 1u);
         output_buffer.values[block_base + compact_index] = input_buffer.values[global_index];
     }

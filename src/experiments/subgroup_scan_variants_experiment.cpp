@@ -24,7 +24,7 @@ using ExperimentMetrics::compute_throughput_elements_per_second;
 constexpr const char* kExperimentId = "31_subgroup_scan_variants";
 constexpr uint32_t kWorkgroupSize = 256U;
 constexpr uint32_t kDispatchCount = 1U;
-constexpr uint32_t kTargetLogicalCount = 262144U;
+constexpr uint32_t kTargetLogicalCount = 134217728U;
 constexpr uint32_t kInputPatternMultiplier = 17U;
 constexpr uint32_t kInputPatternOffset = 23U;
 constexpr uint32_t kInputPatternModulus = 251U;

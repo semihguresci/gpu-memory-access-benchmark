@@ -21,22 +21,22 @@ This folder contains the planning, architecture, and research-positioning notes 
 
 ## Experiment Plans
 - Plan index: [core_experiment_plans_index.md](core_experiment_plans_index.md)
-- Per-experiment plans: [`experiment_plans/`](experiment_plans/)
+- Per-experiment plans: [`../experiments/<id>/plan.md`](../experiments/)
 - Active implementation plan: [implementation_plan.md](implementation_plan.md)
 
 ## Priority Extensions
-- [Experiment 26: Warp-Level Coalescing Alignment](experiment_plans/26_warp_level_coalescing_alignment.md)
-- [Experiment 27: Cache Thrashing, Random vs Sequential](experiment_plans/27_cache_thrashing_random_vs_sequential.md)
-- [Experiment 28: Device-Local vs Host-Visible Heap Placement](experiment_plans/28_device_local_vs_host_visible_heap_placement.md)
-- [Experiment 29: Shared Memory Bank Conflict Study](experiment_plans/29_shared_memory_bank_conflict_study.md)
-- [Experiment 30: Subgroup Reduction Variants](experiment_plans/30_subgroup_reduction_variants.md)
-- [Experiment 31: Subgroup Scan Variants](experiment_plans/31_subgroup_scan_variants.md)
-- [Experiment 32: Subgroup Stream Compaction Variants](experiment_plans/32_subgroup_stream_compaction_variants.md)
-- [Experiment 33: 2D Locality and Transpose Study](experiment_plans/33_two_dimensional_locality_transpose_study.md)
+- [Experiment 26: Warp-Level Coalescing Alignment](../experiments/26_warp_level_coalescing_alignment/plan.md)
+- [Experiment 27: Cache Thrashing, Random vs Sequential](../experiments/27_cache_thrashing_random_vs_sequential/plan.md)
+- [Experiment 28: Device-Local vs Host-Visible Heap Placement](../experiments/28_device_local_vs_host_visible_heap_placement/plan.md)
+- [Experiment 29: Shared Memory Bank Conflict Study](../experiments/29_shared_memory_bank_conflict_study/plan.md)
+- [Experiment 30: Subgroup Reduction Variants](../experiments/30_subgroup_reduction_variants/plan.md)
+- [Experiment 31: Subgroup Scan Variants](../experiments/31_subgroup_scan_variants/plan.md)
+- [Experiment 32: Subgroup Stream Compaction Variants](../experiments/32_subgroup_stream_compaction_variants/plan.md)
+- [Experiment 33: 2D Locality and Transpose Study](../experiments/33_two_dimensional_locality_transpose_study/plan.md)
 
 ## Advanced Plans
 - Plan index: [advanced_investigation_plans_index.md](advanced_investigation_plans_index.md)
-- Per-investigation plans: [`advanced_plans/`](advanced_plans/)
+- Per-investigation plans: [`../experiments/<id>/plan.md`](../experiments/)
 
 ## Tooling Notes
 - [clang_tooling.md](clang_tooling.md)

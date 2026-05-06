@@ -32,13 +32,17 @@ struct SmokeCase {
 
 // Keep this matrix small but representative so ctest exercises multiple experiment
 // families without turning GPU integration coverage into a full benchmark run.
-constexpr std::array<SmokeCase, 6> kSmokeCases{{
+constexpr std::array<SmokeCase, 10> kSmokeCases{{
     {.experiment_id = "01_dispatch_basics", .size_arg = "4M"},
     {.experiment_id = "06_aos_vs_soa", .size_arg = "32M"},
     {.experiment_id = "11_coalesced_vs_strided", .size_arg = "32M"},
     {.experiment_id = "16_shared_memory_tiling", .size_arg = "32M"},
     {.experiment_id = "24_stream_compaction", .size_arg = "32M"},
     {.experiment_id = "27_cache_thrashing_random_vs_sequential", .size_arg = "64M"},
+    {.experiment_id = "34_radix_sort_gpu", .size_arg = "128M"},
+    {.experiment_id = "41_subgroup_operations_study", .size_arg = "32M"},
+    {.experiment_id = "42_async_compute_overlap", .size_arg = "32M"},
+    {.experiment_id = "45_cross_gpu_reproducibility", .size_arg = "32M"},
 }};
 
 std::filesystem::path benchmark_binary_path() {

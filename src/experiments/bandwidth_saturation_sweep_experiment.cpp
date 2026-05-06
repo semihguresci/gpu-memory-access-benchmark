@@ -468,7 +468,7 @@ double run_copy_dispatch_stage(VulkanContext& context, const VariantPipelineReso
 std::vector<uint32_t> make_problem_sizes(std::size_t max_buffer_bytes, uint32_t max_elements,
                                          uint32_t max_group_count_x) {
     std::vector<uint32_t> sizes;
-    sizes.reserve(kSweepSizesMiB.size());
+    sizes.reserve(kSweepSizesMiB.size() + 1U);
 
     for (const uint32_t size_mib : kSweepSizesMiB) {
         const VkDeviceSize bytes = static_cast<VkDeviceSize>(size_mib) * kBytesPerMiB;
@@ -488,6 +488,15 @@ std::vector<uint32_t> make_problem_sizes(std::size_t max_buffer_bytes, uint32_t 
         }
 
         sizes.push_back(element_count);
+    }
+
+    if (max_elements > 0U) {
+        const VkDeviceSize max_bytes = static_cast<VkDeviceSize>(max_elements) * sizeof(float);
+        const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(max_elements, kLocalSizeX);
+        if (max_bytes <= static_cast<VkDeviceSize>(max_buffer_bytes) && group_count_x > 0U &&
+            group_count_x <= max_group_count_x && (sizes.empty() || sizes.back() != max_elements)) {
+            sizes.push_back(max_elements);
+        }
     }
 
     return sizes;

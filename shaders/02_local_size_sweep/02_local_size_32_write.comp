@@ -1,3 +1,8 @@
+// Experiment 02: Local Size Sweep
+// Shader role: local size 32 write.
+// What this experiment tests: how local_size_x changes cost and throughput for the same kernel family.
+// Reading tip: Compare with sibling shaders in this folder; the filename encodes the stage or variant.
+
 #version 450
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;

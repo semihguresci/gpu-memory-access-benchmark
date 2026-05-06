@@ -22,7 +22,7 @@ using ExperimentMetrics::compute_throughput_elements_per_second;
 constexpr const char* kExperimentId = "04_sequential_indexing";
 constexpr uint32_t kLocalSizeX = 256U;
 constexpr uint32_t kMinProblemPower = 10U;
-constexpr uint32_t kMaxProblemPower = 24U;
+constexpr uint32_t kMaxProblemPower = 27U;
 constexpr float kOutputSentinel = -65432.0F;
 constexpr std::array<uint32_t, 8> kDispatchCounts = {1U, 4U, 16U, 64U, 128U, 256U, 512U, 1024U};
 
@@ -93,7 +93,7 @@ double compute_effective_gbps(uint32_t problem_size, uint32_t dispatch_count, do
 
 std::vector<uint32_t> make_problem_sizes(uint32_t max_elements, uint32_t max_group_count_x) {
     std::vector<uint32_t> sizes;
-    sizes.reserve(kMaxProblemPower - kMinProblemPower + 1U);
+    sizes.reserve(kMaxProblemPower - kMinProblemPower + 2U);
 
     for (uint32_t power = kMinProblemPower; power <= kMaxProblemPower; ++power) {
         const uint64_t elements_u64 = 1ULL << power;
@@ -108,6 +108,14 @@ std::vector<uint32_t> make_problem_sizes(uint32_t max_elements, uint32_t max_gro
         }
 
         sizes.push_back(element_count);
+    }
+
+    if (max_elements > 0U) {
+        const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(max_elements, kLocalSizeX);
+        if (group_count_x > 0U && group_count_x <= max_group_count_x &&
+            (sizes.empty() || sizes.back() != max_elements)) {
+            sizes.push_back(max_elements);
+        }
     }
 
     return sizes;

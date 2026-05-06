@@ -84,14 +84,14 @@ Required profiler screenshots for the next reporting pass:
 ## Priority Extensions
 The current repository now includes the extension studies that complete the next layer of the memory-access narrative:
 
-1. [Experiment 26: Warp-Level Coalescing Alignment](experiment_plans/26_warp_level_coalescing_alignment.md)
-2. [Experiment 27: Cache Thrashing, Random vs Sequential](experiment_plans/27_cache_thrashing_random_vs_sequential.md)
-3. [Experiment 28: Device-Local vs Host-Visible Heap Placement](experiment_plans/28_device_local_vs_host_visible_heap_placement.md)
-4. [Experiment 29: Shared Memory Bank Conflict Study](experiment_plans/29_shared_memory_bank_conflict_study.md)
-5. [Experiment 30: Subgroup Reduction Variants](experiment_plans/30_subgroup_reduction_variants.md)
-6. [Experiment 31: Subgroup Scan Variants](experiment_plans/31_subgroup_scan_variants.md)
-7. [Experiment 32: Subgroup Stream Compaction Variants](experiment_plans/32_subgroup_stream_compaction_variants.md)
-8. [Experiment 33: 2D Locality and Transpose Study](experiment_plans/33_two_dimensional_locality_transpose_study.md)
+1. [Experiment 26: Warp-Level Coalescing Alignment](../experiments/26_warp_level_coalescing_alignment/plan.md)
+2. [Experiment 27: Cache Thrashing, Random vs Sequential](../experiments/27_cache_thrashing_random_vs_sequential/plan.md)
+3. [Experiment 28: Device-Local vs Host-Visible Heap Placement](../experiments/28_device_local_vs_host_visible_heap_placement/plan.md)
+4. [Experiment 29: Shared Memory Bank Conflict Study](../experiments/29_shared_memory_bank_conflict_study/plan.md)
+5. [Experiment 30: Subgroup Reduction Variants](../experiments/30_subgroup_reduction_variants/plan.md)
+6. [Experiment 31: Subgroup Scan Variants](../experiments/31_subgroup_scan_variants/plan.md)
+7. [Experiment 32: Subgroup Stream Compaction Variants](../experiments/32_subgroup_stream_compaction_variants/plan.md)
+8. [Experiment 33: 2D Locality and Transpose Study](../experiments/33_two_dimensional_locality_transpose_study/plan.md)
 
 These additions make the project materially stronger because they turn the current memory story into a cleaner engineering sequence:
 - layout choice

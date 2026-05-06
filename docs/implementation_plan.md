@@ -135,7 +135,7 @@ Work items:
 - introduce richer profiling workflows where timing-only analysis is not enough
 
 Primary targets:
-- advanced plans under `docs/advanced_plans/`
+- advanced plans beside each advanced experiment as `experiments/<id>/plan.md`
 - capstone-style experiments that combine memory layout, parallel primitives, and rendering-adjacent workloads
 
 Exit criteria:

@@ -34,8 +34,26 @@ def _load_table(path: Path) -> pd.DataFrame:
 
 def _with_working_set_mib(frame: pd.DataFrame) -> pd.DataFrame:
     plot_frame = frame.copy()
+    if "working_set_bytes" not in plot_frame.columns:
+        raise KeyError("working_set_bytes")
     plot_frame["working_set_mib"] = plot_frame["working_set_bytes"].astype(float) / (1024.0 * 1024.0)
     return plot_frame.sort_values(["logical_elements", "variant"]).reset_index(drop=True)
+
+
+def _attach_working_set_bytes(frame: pd.DataFrame, summary: pd.DataFrame) -> pd.DataFrame:
+    if "working_set_bytes" in frame.columns:
+        return frame
+
+    working_set_lookup = (
+        summary[["logical_elements", "working_set_bytes"]]
+        .drop_duplicates(subset=["logical_elements"])
+        .sort_values(["logical_elements"])
+    )
+    merged = frame.merge(working_set_lookup, on="logical_elements", how="left")
+    if merged["working_set_bytes"].isna().any():
+        raise ValueError("Could not derive working_set_bytes for one or more plot rows.")
+    merged["working_set_bytes"] = merged["working_set_bytes"].astype(int)
+    return merged
 
 
 def _plot_lines(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> None:
@@ -68,10 +86,9 @@ def _plot_lines(frame: pd.DataFrame, y_column: str, output_path: Path, title: st
     plt.close(fig)
 
 
-def _plot_relative(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> None:
-    plot_frame = frame.copy()
-    plot_frame["working_set_mib"] = plot_frame["logical_elements"].astype(float) * 4.0 / (1024.0 * 1024.0)
-    plot_frame = plot_frame.sort_values(["logical_elements", "variant"]).reset_index(drop=True)
+def _plot_relative(frame: pd.DataFrame, summary: pd.DataFrame, y_column: str, output_path: Path, title: str,
+                   ylabel: str) -> None:
+    plot_frame = _with_working_set_mib(_attach_working_set_bytes(frame, summary))
 
     fig, ax = plt.subplots(figsize=(10, 6))
     for variant, style in VARIANT_STYLE.items():
@@ -117,6 +134,7 @@ def main() -> None:
     )
     _plot_relative(
         relative,
+        summary,
         "slowdown_vs_sequential",
         CHARTS_DIR / "cache_thrashing_random_vs_sequential_slowdown_vs_sequential.png",
         "Experiment 27: Slowdown vs Sequential",
@@ -130,7 +148,7 @@ def main() -> None:
         "Estimated GB/s",
     )
     _plot_lines(
-        stability,
+        _attach_working_set_bytes(stability, summary),
         "p95_to_median_gpu_ms",
         CHARTS_DIR / "cache_thrashing_random_vs_sequential_stability_ratio.png",
         "Experiment 27: GPU Time Stability",

@@ -121,9 +121,9 @@ struct AosoaPipelineResources {
 };
 
 std::vector<uint32_t> make_particle_counts(uint32_t max_particles) {
-    const std::array<uint32_t, 6> base_counts = {1000000U, 2000000U, 4000000U, 8000000U, 16000000U, 32000000U};
+    const std::array<uint32_t, 6> base_counts = {4000000U, 8000000U, 10000000U, 12000000U, 14000000U, 16000000U};
     std::vector<uint32_t> output;
-    output.reserve(base_counts.size() + 4U);
+    output.reserve(base_counts.size() + 5U);
 
     for (uint32_t value : base_counts) {
         if (value <= max_particles) {
@@ -140,7 +140,7 @@ std::vector<uint32_t> make_particle_counts(uint32_t max_particles) {
         }
     }
 
-    if (output.empty() && max_particles > 0U) {
+    if (max_particles > 0U && (output.empty() || output.back() != max_particles)) {
         output.push_back(max_particles);
     }
 
