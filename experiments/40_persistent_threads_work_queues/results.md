@@ -1,6 +1,7 @@
 # Experiment 40 Results: Persistent Threads and Work Queues
 
 ## Run Status
+- Implementation note: this archived collection predates the workgroup-sized queue claims now used by the shader. Re-run before using these values for current performance comparisons.
 - Benchmark status: latest archived collection completed; `120/120` recorded rows passed correctness.
 - GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
 - Config: `timed_iterations=5`, `warmup_iterations=2`

@@ -238,7 +238,9 @@ uint64_t compute_estimated_global_traffic_bytes(uint32_t task_count, uint32_t wo
         return payload;
     }
 
-    const uint64_t queue_atomic_ops = static_cast<uint64_t>(task_count) + worker_threads;
+    const uint64_t successful_claims = (static_cast<uint64_t>(task_count) + kWorkgroupSize - 1U) / kWorkgroupSize;
+    const uint64_t worker_groups = worker_threads / kWorkgroupSize;
+    const uint64_t queue_atomic_ops = successful_claims + worker_groups;
     return payload + (queue_atomic_ops * sizeof(uint32_t));
 }
 
@@ -489,6 +491,7 @@ void record_case_notes(std::string& notes, SchedulingMode mode, DistributionKind
     append_note(notes, "distribution=" + std::string(distribution_name(distribution)));
     append_note(notes, "task_count=" + std::to_string(task_count));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
+    append_note(notes, "queue_claim_tasks=" + std::to_string(kWorkgroupSize));
     append_note(notes, "persistent_worker_threads=" + std::to_string(worker_threads));
     append_note(notes, "average_iterations_per_task=" + std::to_string(prepared.average_iterations));
     append_note(notes, "logical_payload_bytes=" + std::to_string(logical_payload_bytes));

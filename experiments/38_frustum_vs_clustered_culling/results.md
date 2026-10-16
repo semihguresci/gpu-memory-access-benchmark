@@ -1,6 +1,7 @@
 # Experiment 38 Results: Frustum vs Clustered Culling
 
 ## Run Status
+- Implementation note: this archived collection predates the workgroup-local counter aggregation now used by the shader. Re-run before using these values for current performance comparisons.
 - Benchmark status: latest collection completed (`120/120` row correctness pass)
 - GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
 - Config: `5` timed iterations, `2` warmup iterations; current sweep keeps `cluster_count=16` and `local_size_x=256`
