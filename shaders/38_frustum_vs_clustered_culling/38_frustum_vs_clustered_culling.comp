@@ -32,6 +32,15 @@ layout(push_constant) uniform PushConstants {
     uint max_visible_entries;
 } push_constants;
 
+const uint kMaxClusterCount = 16u;
+
+// Each workgroup compacts its visible entities and aggregates its cluster
+// counters locally. This bounds device-wide atomic traffic by workgroup count.
+shared uint local_visible_count;
+shared uint visible_base;
+shared uint local_visible_ids[256];
+shared uint local_cluster_counts[kMaxClusterCount];
+
 bool is_visible(vec3 position_value) {
     return abs(position_value.x) <= 0.8 && abs(position_value.y) <= 0.8 && position_value.z <= 0.9;
 }
@@ -44,22 +53,48 @@ uint compute_cluster_index(float position_z) {
 
 void main() {
     const uint index_value = gl_GlobalInvocationID.x;
-    if (index_value >= push_constants.entity_count) {
-        return;
-    }
+    const uint local_index = gl_LocalInvocationID.x;
 
-    const vec4 record_value = input_buffer.records[index_value];
-    if (!is_visible(record_value.xyz)) {
-        return;
+    if (local_index == 0u) {
+        local_visible_count = 0u;
+        for (uint cluster = 0u; cluster < push_constants.cluster_count; ++cluster) {
+            local_cluster_counts[cluster] = 0u;
+        }
     }
+    barrier();
 
-    const uint visible_slot = atomicAdd(counter_buffer.values[0], 1u);
-    if (visible_slot < push_constants.max_visible_entries) {
-        visible_id_buffer.values[visible_slot] = uint(record_value.w);
+    bool visible = false;
+    uint local_visible_slot = 0u;
+    uint entity_id = 0u;
+    uint cluster_index = 0u;
+    if (index_value < push_constants.entity_count) {
+        const vec4 record_value = input_buffer.records[index_value];
+        visible = is_visible(record_value.xyz);
+        if (visible) {
+            entity_id = uint(record_value.w);
+            local_visible_slot = atomicAdd(local_visible_count, 1u);
+            if (push_constants.culling_mode == 1u) {
+                cluster_index = compute_cluster_index(record_value.z);
+                atomicAdd(local_cluster_counts[cluster_index], 1u);
+            }
+        }
     }
+    barrier();
 
-    if (push_constants.culling_mode == 1u) {
-        const uint cluster_index = compute_cluster_index(record_value.z);
-        atomicAdd(counter_buffer.values[1u + cluster_index], 1u);
+    if (local_index == 0u) {
+        visible_base = atomicAdd(counter_buffer.values[0], local_visible_count);
+        if (push_constants.culling_mode == 1u) {
+            for (uint cluster = 0u; cluster < push_constants.cluster_count; ++cluster) {
+                atomicAdd(counter_buffer.values[1u + cluster], local_cluster_counts[cluster]);
+            }
+        }
+    }
+    barrier();
+
+    if (visible) {
+        const uint visible_slot = visible_base + local_visible_slot;
+        if (visible_slot < push_constants.max_visible_entries) {
+            visible_id_buffer.values[visible_slot] = entity_id;
+        }
     }
 }
