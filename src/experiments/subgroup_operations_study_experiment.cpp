@@ -123,36 +123,19 @@ SubgroupSupportInfo query_subgroup_support(VkPhysicalDevice physical_device) {
     };
 }
 
-std::vector<uint32_t> build_reference_outputs(const uint32_t* input_values, uint32_t element_count,
-                                              uint32_t subgroup_size) {
+std::vector<uint32_t> build_reference_outputs(const uint32_t* input_values, uint32_t element_count) {
     std::vector<uint32_t> expected(element_count, 0U);
-    if (subgroup_size == 0U) {
-        return expected;
-    }
-
     const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(element_count, kWorkgroupSize);
     for (uint32_t group = 0U; group < group_count_x; ++group) {
         const uint32_t group_base = group * kWorkgroupSize;
-        for (uint32_t subgroup_base = 0U; subgroup_base < kWorkgroupSize; subgroup_base += subgroup_size) {
-            const uint32_t subgroup_end = std::min(subgroup_base + subgroup_size, kWorkgroupSize);
-            uint32_t subgroup_sum = 0U;
-            uint32_t active_count = 0U;
-
-            for (uint32_t lane = subgroup_base; lane < subgroup_end; ++lane) {
-                const uint32_t global_index = group_base + lane;
-                const uint32_t value = global_index < element_count ? input_values[global_index] : 0U;
-                subgroup_sum += value;
-                active_count += (value & 1U) == 0U ? 0U : 1U;
-            }
-
-            const uint32_t subgroup_result = subgroup_sum + (active_count * 17U);
-            for (uint32_t lane = subgroup_base; lane < subgroup_end; ++lane) {
-                const uint32_t global_index = group_base + lane;
-                if (global_index < element_count) {
-                    expected[global_index] = subgroup_result;
-                }
-            }
+        const uint32_t group_end = std::min(group_base + kWorkgroupSize, element_count);
+        uint32_t workgroup_sum = 0U;
+        uint32_t active_count = 0U;
+        for (uint32_t index = group_base; index < group_end; ++index) {
+            workgroup_sum += input_values[index];
+            active_count += (input_values[index] & 1U) == 0U ? 0U : 1U;
         }
+        std::fill(expected.begin() + group_base, expected.begin() + group_end, workgroup_sum + (active_count * 17U));
     }
 
     return expected;
@@ -359,6 +342,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -380,6 +364,9 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     append_note(notes, "logical_payload_bytes=" + std::to_string(logical_payload_bytes));
     append_note(notes, "estimated_global_total_bytes=" + std::to_string(logical_payload_bytes));
     append_note(notes, "gbps_mode=logical_payload_bytes");
+    append_note(notes, "aggregate_scope=workgroup");
+    append_note(notes, "aggregate_formula=sum_uint32_modulo+17*odd_count");
+    append_note(notes, "oracle=independent_cpu_workgroup_aggregate_each_iteration");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
     }
@@ -399,19 +386,21 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         return false;
     }
 
-    const std::vector<uint32_t> reference_outputs = build_reference_outputs(input_values, element_count, subgroup_size);
+    const std::vector<uint32_t> reference_outputs = build_reference_outputs(input_values, element_count);
     const uint64_t logical_payload_bytes = compute_logical_payload_bytes(element_count);
     std::vector<double> dispatch_samples;
     dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
-    const bool input_valid = validate_input_values(input_values, element_count);
 
     for (int warmup = 0; warmup < runner.warmup_iterations(); ++warmup) {
+        std::transform(reference_outputs.begin(), reference_outputs.end(), output_values, [](uint32_t value) {
+            return ~value;
+        });
         const double dispatch_ms =
             run_dispatch(context, pipeline_resources, element_count, descriptor.kind, max_dispatch_groups_x);
         if (verbose_progress) {
             const bool dispatch_ok = std::isfinite(dispatch_ms);
-            const bool correctness_pass =
-                dispatch_ok && input_valid && validate_output_values(output_values, reference_outputs, element_count);
+            const bool correctness_pass = dispatch_ok && validate_input_values(input_values, element_count) &&
+                                          validate_output_values(output_values, reference_outputs, element_count);
             std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1U) << "/" << runner.warmup_iterations()
                       << " variant=" << descriptor.name << ", element_count=" << element_count
                       << ", dispatch_ms=" << dispatch_ms << ", correctness=" << (correctness_pass ? "pass" : "fail")
@@ -420,6 +409,9 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
     }
 
     for (int iteration = 0; iteration < runner.timed_iterations(); ++iteration) {
+        std::transform(reference_outputs.begin(), reference_outputs.end(), output_values, [](uint32_t value) {
+            return ~value;
+        });
         const auto start = std::chrono::high_resolution_clock::now();
         const double dispatch_ms =
             run_dispatch(context, pipeline_resources, element_count, descriptor.kind, max_dispatch_groups_x);
@@ -427,14 +419,21 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         const std::chrono::duration<double, std::milli> end_to_end_ms = end - start;
 
         const bool dispatch_ok = std::isfinite(dispatch_ms);
-        const bool correctness_pass =
-            dispatch_ok && input_valid && validate_output_values(output_values, reference_outputs, element_count);
+        const bool correctness_pass = dispatch_ok && validate_input_values(input_values, element_count) &&
+                                      validate_output_values(output_values, reference_outputs, element_count);
         output.all_points_correct = output.all_points_correct && correctness_pass;
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, descriptor, element_count, subgroup_size, logical_payload_bytes, correctness_pass,
                           dispatch_ok);
+        append_note(notes, "input_memory_type=" + std::to_string(buffers.input_buffer.memory_type_index));
+        append_note(notes, "input_heap=" + std::to_string(buffers.input_buffer.heap_index));
+        append_note(notes, "input_memory_flags=" + std::to_string(buffers.input_buffer.memory_properties));
+        append_note(notes, "output_memory_type=" + std::to_string(buffers.output_buffer.memory_type_index));
+        append_note(notes, "output_heap=" + std::to_string(buffers.output_buffer.heap_index));
+        append_note(notes, "output_memory_flags=" + std::to_string(buffers.output_buffer.memory_properties));
 
         if (verbose_progress) {
             std::cout << "[" << kExperimentId << "] timed " << (iteration + 1U) << "/" << runner.timed_iterations()

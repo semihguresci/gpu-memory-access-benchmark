@@ -401,6 +401,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -414,10 +415,14 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     append_note(notes, "block_count=" + std::to_string(logical_count / kWorkgroupSize));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "compaction_scope=block_local");
+    append_note(notes, "gbps_mode=shader_payload_bytes");
+    append_note(notes, "payload_formula=(2*valid_count+block_count)*4");
+    append_note(notes, "payload_excludes_shared_atomics_and_physical_memory_traffic");
     append_note(notes,
                 "stable_ordering=" + std::string(descriptor.kind == VariantKind::SubgroupBallot ? "true" : "false"));
     if (descriptor.kind == VariantKind::SubgroupBallot) {
         append_note(notes, "subgroup_size=" + std::to_string(subgroup_size));
+        append_note(notes, "logical_order=dense_active_subgroup_lane_order");
     }
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
@@ -444,8 +449,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
     const ReferenceData reference =
         build_reference_data(input_values, logical_count, valid_ratio_percent, config.pattern_seed);
     const bool stable_ordering_required = descriptor.kind == VariantKind::SubgroupBallot;
-    const uint64_t payload_bytes = (static_cast<uint64_t>(logical_count) * sizeof(uint32_t)) +
-                                   (static_cast<uint64_t>(reference.total_valid_count) * sizeof(uint32_t)) +
+    const uint64_t payload_bytes = (static_cast<uint64_t>(reference.total_valid_count) * sizeof(uint32_t) * 2U) +
                                    (static_cast<uint64_t>(logical_count / kWorkgroupSize) * sizeof(uint32_t));
     std::vector<double> dispatch_samples;
     dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
@@ -484,6 +488,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, descriptor, logical_count, valid_ratio_percent, subgroup_size, reference,
                           correctness_pass, dispatch_ok);
 

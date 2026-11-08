@@ -32,10 +32,17 @@ void main() {
         return;
     }
 
-    Particle p = data[id];
-    p.px += p.vx * p.dt;
-    p.py += p.vy * p.dt;
-    p.pz += p.vz * p.dt;
-    p.mass += 0.000001;
-    data[id] = p;
+    float px = data[id].px;
+    float py = data[id].py;
+    float pz = data[id].pz;
+    float mass = data[id].mass;
+    float vx = data[id].vx;
+    float vy = data[id].vy;
+    float vz = data[id].vz;
+    float dt = data[id].dt;
+
+    data[id].px = px + vx * dt;
+    data[id].py = py + vy * dt;
+    data[id].pz = pz + vz * dt;
+    data[id].mass = mass + 0.000001;
 }

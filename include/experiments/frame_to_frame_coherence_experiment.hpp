@@ -9,6 +9,8 @@
 class VulkanContext;
 
 struct FrameToFrameCoherenceExperimentConfig {
+    std::size_t scratch_size_bytes = 0;
+    // One logical source span; output reserves eight spans within total scratch.
     std::size_t max_buffer_bytes = 0;
     std::string shader_path;
     bool verbose_progress = false;

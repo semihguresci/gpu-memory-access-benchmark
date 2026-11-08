@@ -2,9 +2,12 @@
 
 #include "utils/gpu_timestamp_timer.hpp"
 
+#include <array>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 class VulkanContext {
@@ -15,7 +18,7 @@ class VulkanContext {
     VulkanContext(const VulkanContext&) = delete;
     VulkanContext& operator=(const VulkanContext&) = delete;
 
-    bool initialize(bool enable_validation);
+    bool initialize(bool enable_validation, const std::string& device_selection = {});
     void shutdown();
 
     [[nodiscard]] VkInstance instance() const { return instance_; }
@@ -28,11 +31,22 @@ class VulkanContext {
     [[nodiscard]] std::string selected_device_name() const;
     [[nodiscard]] uint32_t selected_device_api_version() const;
     [[nodiscard]] uint32_t selected_device_driver_version() const;
-    [[nodiscard]] double measure_gpu_time_ms(const std::function<void(VkCommandBuffer)>& record_commands);
+    [[nodiscard]] std::string selected_device_uuid_hex() const;
+    // Short human-readable summary of every enumerated physical device, listing
+    // the 0-based enumeration index, name, and compute-queue capability.
+    [[nodiscard]] std::string describe_enumerated_devices() const;
+    double measure_gpu_time_ms(const std::function<void(VkCommandBuffer)>& record_commands);
 
   private:
+    struct EnumeratedDeviceInfo {
+        uint32_t index = 0;
+        std::string name;
+        bool has_compute_queue = false;
+    };
+
     bool create_instance(bool enable_validation);
-    bool pick_physical_device();
+    bool pick_physical_device(const std::string& device_selection);
+    void query_selected_device_uuid();
     bool create_logical_device();
     bool create_command_resources();
     bool create_timestamp_query_pool();
@@ -52,7 +66,10 @@ class VulkanContext {
     VkFence submit_fence_ = VK_NULL_HANDLE;
     VulkanComputeUtils::GpuTimestampTimer gpu_timestamp_timer_{};
     VkDebugUtilsMessengerEXT debug_messenger_ = VK_NULL_HANDLE;
+    std::vector<EnumeratedDeviceInfo> enumerated_devices_{};
+    std::array<uint8_t, VK_UUID_SIZE> device_uuid_{};
     uint32_t compute_queue_family_index_ = 0;
     bool gpu_timestamps_supported_ = false;
+    bool device_uuid_valid_ = false;
     bool validation_enabled_ = false;
 };

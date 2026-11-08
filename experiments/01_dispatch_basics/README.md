@@ -15,3 +15,7 @@ This folder stores experiment-local artifacts, run archives, and helper scripts 
 - [scripts/README.md](scripts/README.md): local script usage notes
 
 Repo-wide architecture, development planning, and implementation sequencing live under `../../docs/`.
+
+Device summaries and comparisons keep measurement revision, validation mode, warmup
+count, and timed-iteration count separate. Runs with different settings receive
+distinct comparison curves and device charts.

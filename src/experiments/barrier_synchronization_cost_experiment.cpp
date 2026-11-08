@@ -121,13 +121,12 @@ uint32_t rotl32(uint32_t value, uint32_t shift) {
     return (value << effective_shift) | (value >> ((32U - effective_shift) & 31U));
 }
 
-uint32_t mix_value(uint32_t value, uint32_t phase_index, uint32_t local_id, uint32_t group_id, uint32_t tile_index) {
+uint32_t mix_value(uint32_t value, uint32_t phase_index, uint32_t local_id, uint32_t group_id) {
     const uint32_t phase_salt = 0x9E3779B9U * (phase_index + 1U);
     const uint32_t local_salt = 0x85EBCA6BU * (local_id + 1U);
     const uint32_t group_salt = 0xC2B2AE35U * (group_id + 1U);
-    const uint32_t tile_salt = 0x27D4EB2DU * (tile_index + 1U);
     value ^= phase_salt + local_salt;
-    value += group_salt ^ tile_salt;
+    value += group_salt ^ 0x27D4EB2DU;
     value = rotl32(value, (phase_index % 13U) + 5U);
     value ^= value >> 11U;
     value *= 0x7FEB352DU;
@@ -145,11 +144,8 @@ bool validate_output_values(const uint32_t* output_values, const std::vector<uin
     return true;
 }
 
-std::vector<uint32_t> build_reference_values(const uint32_t* src_values, uint32_t logical_count,
-                                             uint32_t barrier_interval_phases) {
+std::vector<uint32_t> build_reference_values(const uint32_t* src_values, uint32_t logical_count) {
     std::vector<uint32_t> reference_values(logical_count, 0U);
-    const uint32_t tile_phase_count = barrier_interval_phases == 0U ? kTotalPhases : barrier_interval_phases;
-    const uint32_t tile_count = barrier_interval_phases == 0U ? 1U : (kTotalPhases / tile_phase_count);
     const uint32_t group_count_x = logical_count / kLocalSizeX;
 
     for (uint32_t group_id = 0U; group_id < group_count_x; ++group_id) {
@@ -159,21 +155,11 @@ std::vector<uint32_t> build_reference_values(const uint32_t* src_values, uint32_
             values[local_id] = src_values[group_base + local_id];
         }
 
-        uint32_t phase_index = 0U;
-        for (uint32_t tile_index = 0U; tile_index < tile_count; ++tile_index) {
-            for (uint32_t tile_phase = 0U; tile_phase < tile_phase_count; ++tile_phase) {
-                for (uint32_t local_id = 0U; local_id < kLocalSizeX; ++local_id) {
-                    values[local_id] = mix_value(values[local_id], phase_index, local_id, group_id, tile_index);
-                }
-                ++phase_index;
-            }
-
-            if (barrier_interval_phases != 0U) {
-                const uint32_t shared_seed =
-                    values[0U] ^ (kSeedSalt + (group_id * 0x9E3779B9U) + (tile_index * 0x85EBCA6BU));
-                for (uint32_t local_id = 0U; local_id < kLocalSizeX; ++local_id) {
-                    values[local_id] ^= shared_seed + local_id + group_id + phase_index;
-                }
+        const uint32_t shared_seed = values[0U] ^ (kSeedSalt + (group_id * 0x9E3779B9U));
+        for (uint32_t phase_index = 0U; phase_index < kTotalPhases; ++phase_index) {
+            for (uint32_t local_id = 0U; local_id < kLocalSizeX; ++local_id) {
+                values[local_id] = mix_value(values[local_id], phase_index, local_id, group_id);
+                values[local_id] ^= shared_seed + local_id + group_id + phase_index + 1U;
             }
         }
 
@@ -387,20 +373,28 @@ double run_dispatch(VulkanContext& context, const PipelineResources& resources, 
         vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
 void record_case_notes(std::string& notes, PlacementKind placement, uint32_t barrier_interval_phases,
                        uint32_t logical_count, uint32_t group_count_x, bool rounded_to_workgroup_multiple,
                        bool correctness_pass, bool dispatch_ok, std::size_t scratch_size_bytes) {
-    const uint32_t sync_points = barrier_interval_phases == 0U ? 0U : (kTotalPhases / barrier_interval_phases);
+    const uint32_t additional_sync_points =
+        barrier_interval_phases == 0U ? 0U : (kTotalPhases / barrier_interval_phases);
     const uint32_t tile_phase_count = barrier_interval_phases == 0U ? kTotalPhases : barrier_interval_phases;
     const uint32_t tile_count = barrier_interval_phases == 0U ? 1U : (kTotalPhases / tile_phase_count);
     const bool is_flat = placement == PlacementKind::FlatLoop;
 
     append_note(notes, std::string("placement=") + (is_flat ? "flat_loop" : "tiled_regions"));
     append_note(notes, "barrier_interval_phases=" + std::to_string(barrier_interval_phases));
-    append_note(notes, "sync_points=" + std::to_string(sync_points));
+    append_note(notes, "sync_points=" + std::to_string(1U + additional_sync_points));
+    append_note(notes, "mandatory_publication_barriers=1");
+    append_note(notes, "additional_barriers=" + std::to_string(additional_sync_points));
+    append_note(notes, "shared_seed_writes_per_workgroup=1");
+    append_note(notes, "shared_seed_reads_per_invocation=" + std::to_string(kTotalPhases));
+    append_note(notes, "shared_access_basis=source_level_driver_may_hoist_reads");
+    append_note(notes, "output_contract=identical_across_variants");
     append_note(notes, "work_phases=" + std::to_string(kTotalPhases));
     append_note(notes, "tile_phase_count=" + std::to_string(tile_phase_count));
     append_note(notes, "tile_count=" + std::to_string(tile_count));
@@ -503,6 +497,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
                       << ", correctness=" << (correctness_pass ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant_name,
@@ -613,9 +608,8 @@ run_barrier_synchronization_cost_experiment(VulkanContext& context, const Benchm
         }
     }
 
+    const std::vector<uint32_t> reference_values = build_reference_values(src_values, logical_count);
     for (const uint32_t barrier_interval_phases : kBarrierIntervalsPhases) {
-        const std::vector<uint32_t> reference_values =
-            build_reference_values(src_values, logical_count, barrier_interval_phases);
         for (std::size_t index = 0; index < kVariantDescriptors.size(); ++index) {
             const auto& descriptor = kVariantDescriptors[index];
             if (!run_case(context, runner, buffers, pipeline_resources[index], descriptor.placement,

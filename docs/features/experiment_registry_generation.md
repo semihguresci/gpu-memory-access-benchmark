@@ -1,12 +1,12 @@
 # Generated Experiment Registry Architecture
 
 ## Purpose
-This document defines the build-time generated experiment registry architecture (option 2) to replace hardcoded per-experiment `if` blocks in `main.cpp`.
+This document describes the build-time generated experiment registry. The shared source of truth is [`config/experiment_manifest.json`](../../config/experiment_manifest.json), consumed by CMake and Python collection/report tooling.
 
 The goal is to support many experiments without continuously editing control-flow code.
 
 ## Problem Summary
-Current experiment dispatch is hardcoded:
+Before the generated registry, experiment dispatch was hardcoded:
 - experiment IDs are listed in CLI validation
 - experiment execution lives in manual `if` blocks
 - output merge and failure handling are duplicated per experiment
@@ -55,11 +55,13 @@ struct ExperimentDescriptor {
     std::string_view category;
     bool enabled;
     ExperimentRunFn run;
+    std::array<uint32_t, 3> required_local_size{1U, 1U, 1U};
+    uint32_t required_shared_memory_bytes = 0;
 };
 ```
 
 ## Build-Time Generation Model
-Recommended manifest format: simple CMake list file or JSON read by CMake script.
+The JSON manifest is read by `cmake/experiments_manifest.cmake` and `scripts/experiment_manifest.py`.
 
 Minimum fields per experiment:
 - `id` (example: `01_dispatch_basics`)
@@ -67,6 +69,11 @@ Minimum fields per experiment:
 - `category` (example: `foundations`, `memory_layout`)
 - `adapter_symbol` (function symbol used in generated registry)
 - `enabled` (boolean)
+- `source` and `adapter_source` (repository-relative C++ source paths)
+- `required_local_size` (three positive integers, largest local dimensions needed by the enabled variants)
+- `required_shared_memory_bytes` (largest declared shared footprint among the enabled variant shaders)
+
+Before invoking an adapter, the generic runtime checks the declared local dimensions, total invocation count, and shared-memory footprint against device limits. Update both requirements when adding or changing shaders. For example, Experiment 29 requires 33,792 shared bytes and Experiment 35 requires 32,768. Variant dispatch dimensions and subgroup-specific assumptions still need checks inside the implementation. `create_buffer_resource` separately rejects storage buffers larger than `maxStorageBufferRange`.
 
 Generated outputs:
 - `build/generated/experiment_registry.hpp`
@@ -196,3 +203,24 @@ After this architecture is stable, add optional manifest fields:
 - `default_enabled`
 
 This allows future capability gating without changing main control flow.
+
+## Collection, analysis, and report refresh
+
+Rebuild the selected executable after registration or shader changes, then collect and analyze the same run before refreshing reports:
+
+```powershell
+cmake --preset windows-tests-vs
+cmake --build --preset tests-vs-release --target gpu_memory_layout_experiments
+python scripts/run_experiment_data_collection.py --experiment all --binary build-tests-vs/Release/gpu_memory_layout_experiments.exe --iterations 5 --warmup 2 --size 128M --label integrity_fixes
+python scripts/generate_experiment_artifacts.py --experiment all
+python scripts/refresh_experiment_reports.py --experiment all --check
+python scripts/refresh_experiment_reports.py --experiment all
+```
+
+Use an explicit `--binary` if another checkout or build could be selected. The `128M` scratch example accommodates the radix-sort minimum; a whole-suite `4M` run fails clearly at that experiment. The 2026-10-23 refresh uses `32M` for individual experiments and `128M` for radix sort. These are exploratory sizes; larger working sets and repeated independent collections are needed for sustained-bandwidth claims. Each command also accepts one full experiment ID.
+
+Current exports use schema `1.2.0` and record `measurement_revision=2026-11-08-complete-review-fixes` plus the actual command-line argument vector. The measurement revision identifies changed benchmark semantics; it is not a source, executable, or shader hash. Keep historical archives untouched and never relabel their rows with this revision. Preserve any additional collection hashes/provenance in the export and matching archive.
+
+Analyzers select one measurement revision and reject failed, missing-correctness, and non-finite measurements. They write `results/tables/analysis_provenance.json` with the exact source JSON hashes, analyzer/helper hashes, and only CSV/chart paths actually written in that invocation. Separate plotters verify each requested CSV before reading it, then bind their newly generated PNG/SVG files and plotter hashes. Unused files left from earlier runs remain unbound, even if their modification time is recent. Changing a source, tool, or bound output requires regenerating analysis and plots.
+
+The report refresher reads current raw JSON only, rejects failed/non-finite or incomplete rows, and recomputes medians at the largest size common to all variant/dispatch-count cases. If no common size exists, it labels each case's own largest size explicitly. It writes reports only after all selected exports pass validation, records runtime metadata and raw SHA-256, and links an archive only when its entire JSON content matches. Derived CSV/PNG/SVG links require verified manifest bindings and the exact current raw hash among the analysis sources. Missing or stale provenance omits derived links with a reason while retaining the raw-data report. The refresher does not run benchmarks/analyzers or change raw data, derived files, or archives.

@@ -1,0 +1,65 @@
+// Experiment 48: Buffer Vs Image Representation
+// Shader role: transposed (column-major) storage-buffer representation.
+// What this experiment tests: the same coordinate and fetch pattern as the
+// row-major buffer, stored transposed (index = x * grid_height + y), so
+// neighborhood fetches inside one row cross H distinct cache rows.
+// Reading tip: The CPU oracle mirrors hash32, dataset_value, and mix_state.
+
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) writeonly buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(set = 0, binding = 1) readonly buffer InputBuffer {
+    uint values[];
+} input_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint grid_width;
+    uint grid_height;
+    uint access_mode;   // 0 = neighborhood clamped, 1 = hashed random scatter
+} push_constants;
+
+uint hash32(uint value) {
+    value ^= value >> 16u;
+    value *= 0x7FEB352Du;
+    value ^= value >> 15u;
+    value *= 0x846CA68Bu;
+    value ^= value >> 16u;
+    return value;
+}
+
+uint mix_state(uint state, uint value) {
+    return (state ^ value) * 2654435761u;
+}
+
+void main() {
+    const uint id = gl_GlobalInvocationID.x;
+    if (id >= push_constants.element_count) {
+        return;
+    }
+
+    const uint x0 = id % push_constants.grid_width;
+    const uint y0 = id / push_constants.grid_width;
+    uint state = 2166136261u;
+    for (uint k = 0u; k < 4u; ++k) {
+        uint cx = 0u;
+        uint cy = 0u;
+        if (push_constants.access_mode == 0u) {
+            const uint dx = (k == 1u || k == 3u) ? 1u : 0u;
+            const uint dy = (k >= 2u) ? 1u : 0u;
+            cx = min(x0 + dx, push_constants.grid_width - 1u);
+            cy = min(y0 + dy, push_constants.grid_height - 1u);
+        } else {
+            cx = hash32((id * 4u + k) * 2u) % push_constants.grid_width;
+            cy = hash32((id * 4u + k) * 2u + 1u) % push_constants.grid_height;
+        }
+        state = mix_state(state, input_buffer.values[cx * push_constants.grid_height + cy]);
+    }
+    state = mix_state(state, id);
+    output_buffer.values[id] = state;
+}

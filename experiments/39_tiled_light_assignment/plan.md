@@ -1,7 +1,7 @@
 # Advanced Investigation 04: Tiled Light Assignment
 
 ## 1. Lecture Focus
-- Concept: Light-to-tile list construction strategies.
+- Concept: Light-to-tile overlap counting strategies.
 - Why this matters: Highly relevant to Forward+, tiled deferred, and many-light rendering techniques.
 - Central question: How do append/list-build strategies trade contention, load balance, and throughput?
 
@@ -19,19 +19,20 @@ By the end of this investigation, you should be able to:
 - Record assumptions and known unknowns before running the benchmarks.
 
 ## 4. Hypothesis
-Prefix-sum-based offsets or local staging reduce contention compared with naive global atomics.
+Light-centric atomic counters and tile-centric serial/shared reductions trade atomic contention against repeated light scans. The current proxy builds counts, not assignment lists or prefix offsets.
 
 ## 5. Experimental Design
 ### Independent variables
-Tile size, light count, resolution, list-build strategy, light ordering coherence.
+Light count, uniform/clustered light distribution and light-centric atomic versus tile-centric serial/shared-reduction strategy at fixed tile dimensions.
 
 ### Controlled variables
 - Fixed benchmark harness and timing method (GPU timestamp queries).
 - Fixed data generation seeds per scenario where reproducibility is needed.
 - Fixed correctness oracle per variant.
+- Validate every tile count against the deterministic CPU overlap oracle after each timed iteration. Derive total overlaps from the measured tile counts on the CPU outside GPU timing; no global statistics atomics run in any strategy.
 
 ### Metrics
-Runtime, atomic pressure proxy, average and max list length, load imbalance.
+GPU time and logical lights/s. Export modeled requested global bytes: light-centric loads each light once and models one useful tile atomic as a 4-byte read plus 4-byte write per overlap; tile-centric paths read all lights per tile and store one count per tile. Include the common 4-byte mode echo. These estimates are not observed cache/DRAM traffic, and the algorithms intentionally perform different candidate tests.
 
 ## 6. Implementation Plan
 1. Implement minimally correct baseline variant first.

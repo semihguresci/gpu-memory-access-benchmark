@@ -16,7 +16,13 @@
       "docs_group": "core",
       "plan_title": "Dispatch Basics",
       "plan_path": "experiments/01_dispatch_basics/plan.md",
-      "plan_description": "Minimal Vulkan compute dispatch, correctness path, and baseline GPU timing."
+      "plan_description": "Minimal Vulkan compute dispatch, correctness path, and baseline GPU timing.",
+      "required_local_size": [
+        64,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "02_local_size_sweep",
@@ -34,7 +40,13 @@
       "docs_group": "core",
       "plan_title": "Local Size Sweep",
       "plan_path": "experiments/02_local_size_sweep/plan.md",
-      "plan_description": "Workgroup sizing and execution efficiency tradeoffs."
+      "plan_description": "Workgroup sizing and execution efficiency tradeoffs.",
+      "required_local_size": [
+        32,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "03_memory_copy_baseline",
@@ -52,7 +64,13 @@
       "docs_group": "core",
       "plan_title": "Memory Copy Baseline",
       "plan_path": "experiments/03_memory_copy_baseline/plan.md",
-      "plan_description": "Raw buffer read/write/copy throughput characterization."
+      "plan_description": "Raw buffer read/write/copy throughput characterization.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "04_sequential_indexing",
@@ -70,7 +88,13 @@
       "docs_group": "core",
       "plan_title": "Sequential Indexing",
       "plan_path": "experiments/04_sequential_indexing/plan.md",
-      "plan_description": "Ideal contiguous thread-to-data mapping as a good-path baseline."
+      "plan_description": "Ideal contiguous thread-to-data mapping as a good-path baseline.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "05_global_id_mapping_variants",
@@ -88,7 +112,13 @@
       "docs_group": "core",
       "plan_title": "Global ID Mapping Variants",
       "plan_path": "experiments/05_global_id_mapping_variants/plan.md",
-      "plan_description": "Direct, offset, and grid-stride mapping behavior."
+      "plan_description": "Direct, offset, and grid-stride mapping behavior.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "06_aos_vs_soa",
@@ -107,7 +137,13 @@
       "plan_title": "AoS vs SoA",
       "plan_path": "experiments/06_aos_vs_soa/plan.md",
       "plan_description": "Array-of-Structures versus Structure-of-Arrays layout efficiency.",
-      "memory_sequence_order": 1
+      "memory_sequence_order": 1,
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "07_aosoa_blocked_layout",
@@ -125,7 +161,13 @@
       "docs_group": "core",
       "plan_title": "AoSoA or Blocked Layout",
       "plan_path": "experiments/07_aosoa_blocked_layout/plan.md",
-      "plan_description": "Hybrid layout balancing vector locality and contiguous field access."
+      "plan_description": "Hybrid layout balancing vector locality and contiguous field access.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "08_std430_std140_packed",
@@ -143,7 +185,13 @@
       "docs_group": "core",
       "plan_title": "std430 vs std140 vs Packed",
       "plan_path": "experiments/08_std430_std140_packed/plan.md",
-      "plan_description": "Shader buffer layout standards and padding cost."
+      "plan_description": "Shader buffer layout standards and padding cost.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "09_vec3_vec4_padding_costs",
@@ -161,7 +209,13 @@
       "docs_group": "core",
       "plan_title": "vec3, vec4, and Padding Costs",
       "plan_path": "experiments/09_vec3_vec4_padding_costs/plan.md",
-      "plan_description": "Impact of vector shape choice on storage efficiency and bandwidth."
+      "plan_description": "Impact of vector shape choice on storage efficiency and bandwidth.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "10_scalar_type_width_sweep",
@@ -179,7 +233,13 @@
       "docs_group": "core",
       "plan_title": "Scalar Type Width Sweep",
       "plan_path": "experiments/10_scalar_type_width_sweep/plan.md",
-      "plan_description": "Precision-width tradeoffs: 32-bit, 16-bit, and narrower storage."
+      "plan_description": "Precision-width tradeoffs: 32-bit, 16-bit, and narrower storage.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "11_coalesced_vs_strided",
@@ -198,7 +258,13 @@
       "plan_title": "Coalesced vs Strided Access",
       "plan_path": "experiments/11_coalesced_vs_strided/plan.md",
       "plan_description": "Contiguous and strided load behavior.",
-      "memory_sequence_order": 2
+      "memory_sequence_order": 2,
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "12_gather_access_pattern",
@@ -216,7 +282,13 @@
       "docs_group": "core",
       "plan_title": "Gather Access Pattern",
       "plan_path": "experiments/12_gather_access_pattern/plan.md",
-      "plan_description": "Indirect indexed reads through an index buffer."
+      "plan_description": "Indirect indexed reads through an index buffer.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "13_scatter_access_pattern",
@@ -234,7 +306,13 @@
       "docs_group": "core",
       "plan_title": "Scatter Access Pattern",
       "plan_path": "experiments/13_scatter_access_pattern/plan.md",
-      "plan_description": "Indirect indexed writes and contention behavior."
+      "plan_description": "Indirect indexed writes and contention behavior.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "14_read_reuse_cache_locality",
@@ -253,7 +331,13 @@
       "plan_title": "Read Reuse and Cache Locality",
       "plan_path": "experiments/14_read_reuse_cache_locality/plan.md",
       "plan_description": "Temporal locality and reuse-distance effects.",
-      "memory_sequence_order": 3
+      "memory_sequence_order": 3,
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "15_bandwidth_saturation_sweep",
@@ -272,7 +356,13 @@
       "plan_title": "Bandwidth Saturation Sweep",
       "plan_path": "experiments/15_bandwidth_saturation_sweep/plan.md",
       "plan_description": "Scaling data volume until practical bandwidth plateau.",
-      "memory_sequence_order": 4
+      "memory_sequence_order": 4,
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "16_shared_memory_tiling",
@@ -291,7 +381,13 @@
       "plan_title": "Shared or Workgroup Memory Tiling",
       "plan_path": "experiments/16_shared_memory_tiling/plan.md",
       "plan_description": "Staging data in on-chip memory for reuse.",
-      "memory_sequence_order": 5
+      "memory_sequence_order": 5,
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 1152
     },
     {
       "id": "17_tile_size_sweep",
@@ -309,7 +405,13 @@
       "docs_group": "core",
       "plan_title": "Tile Size Sweep",
       "plan_path": "experiments/17_tile_size_sweep/plan.md",
-      "plan_description": "Tradeoff between reuse, shared-memory pressure, and occupancy."
+      "plan_description": "Tradeoff between reuse, shared-memory pressure, and occupancy.",
+      "required_local_size": [
+        64,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 384
     },
     {
       "id": "18_register_pressure_proxy",
@@ -327,7 +429,13 @@
       "docs_group": "core",
       "plan_title": "Register Pressure Proxy Study",
       "plan_path": "experiments/18_register_pressure_proxy/plan.md",
-      "plan_description": "Effect of increased per-thread temporary state."
+      "plan_description": "Effect of increased per-thread temporary state.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "19_branch_divergence",
@@ -345,7 +453,13 @@
       "docs_group": "core",
       "plan_title": "Branch Divergence",
       "plan_path": "experiments/19_branch_divergence/plan.md",
-      "plan_description": "Control-flow divergence within warp or wave execution."
+      "plan_description": "Control-flow divergence within warp or wave execution.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "20_barrier_synchronization_cost",
@@ -363,7 +477,13 @@
       "docs_group": "core",
       "plan_title": "Barrier and Synchronization Cost",
       "plan_path": "experiments/20_barrier_synchronization_cost/plan.md",
-      "plan_description": "Synchronization overhead characterization."
+      "plan_description": "Synchronization overhead characterization.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 4
     },
     {
       "id": "21_parallel_reduction",
@@ -381,7 +501,13 @@
       "docs_group": "core",
       "plan_title": "Parallel Reduction",
       "plan_path": "experiments/21_parallel_reduction/plan.md",
-      "plan_description": "Reduction patterns from naive to tree and shared-memory optimized."
+      "plan_description": "Reduction patterns from naive to tree and shared-memory optimized.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 1024
     },
     {
       "id": "22_prefix_sum_scan",
@@ -399,7 +525,13 @@
       "docs_group": "core",
       "plan_title": "Prefix Sum or Scan",
       "plan_path": "experiments/22_prefix_sum_scan/plan.md",
-      "plan_description": "Inclusive/exclusive scan as a foundational parallel primitive."
+      "plan_description": "Inclusive/exclusive scan as a foundational parallel primitive.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 24576
     },
     {
       "id": "23_histogram_atomic_contention",
@@ -417,7 +549,13 @@
       "docs_group": "core",
       "plan_title": "Histogram and Atomic Contention",
       "plan_path": "experiments/23_histogram_atomic_contention/plan.md",
-      "plan_description": "Atomic update contention and privatization strategies."
+      "plan_description": "Atomic update contention and privatization strategies.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 1024
     },
     {
       "id": "24_stream_compaction",
@@ -435,7 +573,13 @@
       "docs_group": "core",
       "plan_title": "Stream Compaction",
       "plan_path": "experiments/24_stream_compaction/plan.md",
-      "plan_description": "Flag, scan, and compact-write pipeline."
+      "plan_description": "Flag, scan, and compact-write pipeline.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 24576
     },
     {
       "id": "25_spatial_binning_clustered_culling_capstone",
@@ -453,7 +597,13 @@
       "docs_group": "core",
       "plan_title": "Spatial Binning or Clustered Culling Capstone",
       "plan_path": "experiments/25_spatial_binning_clustered_culling_capstone/plan.md",
-      "plan_description": "Rendering-style compute pipeline combining prior primitives."
+      "plan_description": "Rendering-style compute pipeline combining prior primitives.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "26_warp_level_coalescing_alignment",
@@ -471,7 +621,13 @@
       "docs_group": "extension",
       "plan_title": "Warp-Level Coalescing Alignment",
       "plan_path": "experiments/26_warp_level_coalescing_alignment/plan.md",
-      "plan_description": "Aligned vs misaligned contiguous accesses at warp granularity."
+      "plan_description": "Aligned vs misaligned contiguous accesses at warp granularity.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "27_cache_thrashing_random_vs_sequential",
@@ -489,7 +645,13 @@
       "docs_group": "extension",
       "plan_title": "Cache Thrashing, Random vs Sequential",
       "plan_path": "experiments/27_cache_thrashing_random_vs_sequential/plan.md",
-      "plan_description": "Healthy locality versus deliberate cache defeat."
+      "plan_description": "Healthy locality versus deliberate cache defeat.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "28_device_local_vs_host_visible_heap_placement",
@@ -507,7 +669,13 @@
       "docs_group": "extension",
       "plan_title": "Device-Local vs Host-Visible Heap Placement",
       "plan_path": "experiments/28_device_local_vs_host_visible_heap_placement/plan.md",
-      "plan_description": "Dispatch-only and end-to-end cost of host-visible buffers versus staged device-local placement."
+      "plan_description": "Dispatch-only and end-to-end cost of host-visible buffers versus staged device-local placement.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "29_shared_memory_bank_conflict_study",
@@ -525,7 +693,13 @@
       "docs_group": "extension",
       "plan_title": "Shared Memory Bank Conflict Study",
       "plan_path": "experiments/29_shared_memory_bank_conflict_study/plan.md",
-      "plan_description": "Stride-driven shared-memory bank conflicts and the padding fix."
+      "plan_description": "Stride-driven shared-memory bank conflicts and the padding fix.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 33792
     },
     {
       "id": "30_subgroup_reduction_variants",
@@ -543,7 +717,13 @@
       "docs_group": "extension",
       "plan_title": "Subgroup Reduction Variants",
       "plan_path": "experiments/30_subgroup_reduction_variants/plan.md",
-      "plan_description": "Compare shared-tree reduction with subgroup-assisted reduction."
+      "plan_description": "Compare shared-tree reduction with subgroup-assisted reduction.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 1024
     },
     {
       "id": "31_subgroup_scan_variants",
@@ -561,7 +741,13 @@
       "docs_group": "extension",
       "plan_title": "Subgroup Scan Variants",
       "plan_path": "experiments/31_subgroup_scan_variants/plan.md",
-      "plan_description": "Block-local inclusive scan using shared memory versus subgroup intrinsics."
+      "plan_description": "Block-local inclusive scan using shared memory versus subgroup intrinsics.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 2048
     },
     {
       "id": "32_subgroup_stream_compaction_variants",
@@ -579,7 +765,13 @@
       "docs_group": "extension",
       "plan_title": "Subgroup Stream Compaction Variants",
       "plan_path": "experiments/32_subgroup_stream_compaction_variants/plan.md",
-      "plan_description": "Per-workgroup compaction using shared atomics versus subgroup ballot ranking."
+      "plan_description": "Per-workgroup compaction using shared atomics versus subgroup ballot ranking.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 2048
     },
     {
       "id": "33_two_dimensional_locality_transpose_study",
@@ -597,7 +789,13 @@
       "docs_group": "extension",
       "plan_title": "2D Locality and Transpose Study",
       "plan_path": "experiments/33_two_dimensional_locality_transpose_study/plan.md",
-      "plan_description": "Row-major copy versus naive and tiled transpose access patterns."
+      "plan_description": "Row-major copy versus naive and tiled transpose access patterns.",
+      "required_local_size": [
+        16,
+        16,
+        1
+      ],
+      "required_shared_memory_bytes": 1088
     },
     {
       "id": "34_radix_sort_gpu",
@@ -615,7 +813,13 @@
       "docs_group": "advanced",
       "plan_title": "Radix Sort on GPU",
       "plan_path": "experiments/34_radix_sort_gpu/plan.md",
-      "plan_description": "Multi-pass GPU radix sort: 8-bit vs 4-bit digit width variants, key-only."
+      "plan_description": "Multi-pass GPU radix sort: 8-bit vs 4-bit digit width variants, key-only.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 1024
     },
     {
       "id": "35_occupancy_modeling",
@@ -633,7 +837,13 @@
       "docs_group": "advanced",
       "plan_title": "Occupancy Modeling Against Vendor Guidance",
       "plan_path": "experiments/35_occupancy_modeling/plan.md",
-      "plan_description": "Low, medium, and high shared-memory pressure variants to model occupancy effects on throughput."
+      "plan_description": "Low, medium, and high shared-memory pressure variants to model occupancy effects on throughput.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 32768
     },
     {
       "id": "36_bvh_node_layout",
@@ -651,7 +861,13 @@
       "docs_group": "advanced",
       "plan_title": "BVH Node Layout",
       "plan_path": "experiments/36_bvh_node_layout/plan.md",
-      "plan_description": "Compact versus padded BVH-node storage and hashed traversal-order locality impact."
+      "plan_description": "Compact versus padded BVH-node storage and hashed traversal-order locality impact.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "37_frame_to_frame_coherence",
@@ -669,7 +885,13 @@
       "docs_group": "advanced",
       "plan_title": "Frame-to-Frame Coherence",
       "plan_path": "experiments/37_frame_to_frame_coherence/plan.md",
-      "plan_description": "Temporal locality sensitivity across coherent, block-scrambled, and frame-random access."
+      "plan_description": "Temporal locality sensitivity across coherent, block-scrambled, and frame-random access.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "38_frustum_vs_clustered_culling",
@@ -687,7 +909,13 @@
       "docs_group": "advanced",
       "plan_title": "Frustum Culling vs Clustered Culling",
       "plan_path": "experiments/38_frustum_vs_clustered_culling/plan.md",
-      "plan_description": "Visibility list construction under direct frustum filtering versus clustered binning."
+      "plan_description": "Visibility list construction under direct frustum filtering versus clustered binning.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 72
     },
     {
       "id": "39_tiled_light_assignment",
@@ -705,7 +933,13 @@
       "docs_group": "advanced",
       "plan_title": "Tiled Light Assignment",
       "plan_path": "experiments/39_tiled_light_assignment/plan.md",
-      "plan_description": "Compare light-centric atomics against tile-centric counting strategies."
+      "plan_description": "Compare light-centric atomics against tile-centric counting strategies.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 1024
     },
     {
       "id": "40_persistent_threads_work_queues",
@@ -723,7 +957,13 @@
       "docs_group": "advanced",
       "plan_title": "Persistent Threads and Work Queues",
       "plan_path": "experiments/40_persistent_threads_work_queues/plan.md",
-      "plan_description": "Static partitioning versus persistent queue workers under irregular task costs."
+      "plan_description": "Static partitioning versus persistent queue workers under irregular task costs.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 4
     },
     {
       "id": "41_subgroup_operations_study",
@@ -741,7 +981,13 @@
       "docs_group": "advanced",
       "plan_title": "Subgroup Operations Study",
       "plan_path": "experiments/41_subgroup_operations_study/plan.md",
-      "plan_description": "Shared-memory baseline versus subgroup arithmetic and ballot intrinsics."
+      "plan_description": "Shared-memory baseline versus subgroup arithmetic and ballot intrinsics.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 2048
     },
     {
       "id": "42_async_compute_overlap",
@@ -759,7 +1005,13 @@
       "docs_group": "advanced",
       "plan_title": "Async Compute Overlap",
       "plan_path": "experiments/42_async_compute_overlap/plan.md",
-      "plan_description": "Serial two-pass execution versus fused overlap proxy on independent workloads."
+      "plan_description": "Serial two-pass execution versus fused overlap proxy on independent workloads.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "43_ray_friendly_memory_layouts",
@@ -777,7 +1029,13 @@
       "docs_group": "advanced",
       "plan_title": "Ray-Friendly Memory Layouts",
       "plan_path": "experiments/43_ray_friendly_memory_layouts/plan.md",
-      "plan_description": "AoS-style padded and SoA-style compact layouts under sequential and hashed ray access."
+      "plan_description": "AoS-style padded and SoA-style compact layouts under sequential and hashed ray access.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "44_gpu_driven_pipeline_blocks",
@@ -795,7 +1053,13 @@
       "docs_group": "advanced",
       "plan_title": "GPU-Driven Pipeline Building Blocks",
       "plan_path": "experiments/44_gpu_driven_pipeline_blocks/plan.md",
-      "plan_description": "Compares staged cull-bucket-emit dispatch pipelines against a fused single-dispatch implementation."
+      "plan_description": "Compares staged cull-bucket-emit dispatch pipelines against a fused single-dispatch implementation.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     },
     {
       "id": "45_cross_gpu_reproducibility",
@@ -813,7 +1077,85 @@
       "docs_group": "advanced",
       "plan_title": "Reproducibility and Cross-GPU Comparison",
       "plan_path": "experiments/45_cross_gpu_reproducibility/plan.md",
-      "plan_description": "Deterministic coalesced, stride, and hashed probes with checksum notes for cross-run and cross-GPU comparison."
+      "plan_description": "Deterministic coalesced, stride, and hashed probes with checksum notes for cross-run and cross-GPU comparison.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
+    },
+    {
+      "id": "46_dependent_load_latency",
+      "display_name": "Dependent Load Latency",
+      "category": "memory_hierarchy",
+      "adapter_symbol": "run_dependent_load_latency_experiment_adapter",
+      "enabled": true,
+      "source": "src/experiments/dependent_load_latency_experiment.cpp",
+      "adapter_source": "src/experiments/adapters/dependent_load_latency_adapter.cpp",
+      "default_size": "32M",
+      "analysis_script": "analyze_dependent_load_latency.py",
+      "has_plot_script": true,
+      "supports_skip_current": true,
+      "plot_after_skip_current": true,
+      "docs_group": "advanced",
+      "plan_title": "Dependent Load Latency and Memory-Level Parallelism",
+      "plan_path": "experiments/46_dependent_load_latency/plan.md",
+      "plan_description": "Pointer-chase chains separate real per-load latency from memory-level parallelism while holding total loads and footprint constant.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
+    },
+    {
+      "id": "47_block_reorder_factorial",
+      "display_name": "Block Reorder Factorial",
+      "category": "access_patterns",
+      "adapter_symbol": "run_block_reorder_factorial_experiment_adapter",
+      "enabled": true,
+      "source": "src/experiments/block_reorder_factorial_experiment.cpp",
+      "adapter_source": "src/experiments/adapters/block_reorder_factorial_adapter.cpp",
+      "default_size": "128M",
+      "analysis_script": "analyze_block_reorder_factorial.py",
+      "has_plot_script": true,
+      "supports_skip_current": true,
+      "plot_after_skip_current": true,
+      "docs_group": "advanced",
+      "plan_title": "Coalescing, Spatial Locality, and Cache Residency Factorial",
+      "plan_path": "experiments/47_block_reorder_factorial/plan.md",
+      "plan_description": "2x2 factorial over block visit order and within-block lane order at bijective source coverage, plus warm versus evicted residency controls.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 2048
+    },
+    {
+      "id": "48_buffer_vs_image_representation",
+      "display_name": "Buffer Vs Image Representation",
+      "category": "memory_hierarchy",
+      "adapter_symbol": "run_buffer_vs_image_representation_experiment_adapter",
+      "enabled": true,
+      "source": "src/experiments/buffer_vs_image_representation_experiment.cpp",
+      "adapter_source": "src/experiments/adapters/buffer_vs_image_representation_adapter.cpp",
+      "default_size": "32M",
+      "analysis_script": "analyze_buffer_vs_image_representation.py",
+      "has_plot_script": true,
+      "supports_skip_current": true,
+      "plot_after_skip_current": true,
+      "docs_group": "advanced",
+      "plan_title": "Buffers, Texel Buffers, Storage Images, and Sampled Images",
+      "plan_path": "experiments/48_buffer_vs_image_representation/plan.md",
+      "plan_description": "Same integer 2D dataset across buffer layouts and image paths with exact unfiltered fetches, identical coordinates, fetch counts, and outputs.",
+      "required_local_size": [
+        256,
+        1,
+        1
+      ],
+      "required_shared_memory_bytes": 0
     }
   ]
 }

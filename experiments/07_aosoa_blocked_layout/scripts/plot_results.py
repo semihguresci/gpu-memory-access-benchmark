@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validated_rows,
+    write_plot_provenance,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 INPUT_JSON = ROOT / "results" / "tables" / "benchmark_results.json"
@@ -18,8 +27,11 @@ EXPERIMENT_ID = "07_aosoa_blocked_layout"
 def _format_problem_size_ticks(values: np.ndarray) -> list[str]:
     labels: list[str] = []
     for value in values:
-        exponent = int(round(np.log2(value)))
-        labels.append(f"2^{exponent}")
+        count = int(value)
+        if count > 0 and count & (count - 1) == 0:
+            labels.append(f"2^{count.bit_length() - 1}")
+        else:
+            labels.append(f"{count:,}")
     return labels
 
 
@@ -28,7 +40,7 @@ def _plot_aosoa_summary() -> bool:
         return False
 
     payload = json.loads(INPUT_JSON.read_text(encoding="utf-8"))
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, "07_aosoa_blocked_layout", INPUT_JSON)
     if not rows:
         return False
 
@@ -93,11 +105,13 @@ def _plot_aosoa_summary() -> bool:
 
 
 def main() -> None:
+    validate_analysis_provenance(INPUT_JSON.parent, "07_aosoa_blocked_layout", required_source=INPUT_JSON)
     if not _plot_aosoa_summary():
         raise FileNotFoundError(
             "No Experiment 07 rows found in benchmark_results.json. "
             "Run the benchmark first with --experiment 07_aosoa_blocked_layout."
         )
+    write_plot_provenance(INPUT_JSON.parent, "07_aosoa_blocked_layout", [OUTPUT_PNG], plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

@@ -10,8 +10,9 @@ bool run_frame_to_frame_coherence_experiment_adapter(VulkanContext& context, con
     FrameToFrameCoherenceExperimentOutput experiment_output = run_frame_to_frame_coherence_experiment(
         context, runner,
         FrameToFrameCoherenceExperimentConfig{
+            .scratch_size_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
             .max_buffer_bytes = static_cast<std::size_t>(
-                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 2U)),
+                ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 9U)),
             .shader_path = "",
             .verbose_progress = options.verbose_progress,
         });

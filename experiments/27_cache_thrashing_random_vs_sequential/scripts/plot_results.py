@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Plot only tables bound to validated raw measurements.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "27_cache_thrashing_random_vs_sequential"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -26,7 +38,9 @@ VARIANT_STYLE = {
 def _load_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing input table: {path}")
+    validate_derived_table(path)
     frame = pd.read_csv(path)
+    validate_summary_table(frame, path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
     return frame
@@ -56,7 +70,7 @@ def _attach_working_set_bytes(frame: pd.DataFrame, summary: pd.DataFrame) -> pd.
     return merged
 
 
-def _plot_lines(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> None:
+def _plot_lines(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> Path | None:
     plot_frame = _with_working_set_mib(frame)
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -84,10 +98,11 @@ def _plot_lines(frame: pd.DataFrame, y_column: str, output_path: Path, title: st
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _plot_relative(frame: pd.DataFrame, summary: pd.DataFrame, y_column: str, output_path: Path, title: str,
-                   ylabel: str) -> None:
+                   ylabel: str) -> Path | None:
     plot_frame = _with_working_set_mib(_attach_working_set_bytes(frame, summary))
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -118,44 +133,48 @@ def _plot_relative(frame: pd.DataFrame, summary: pd.DataFrame, y_column: str, ou
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, EXPERIMENT_ID)
     summary = _load_table(SUMMARY_CSV)
     relative = _load_table(RELATIVE_CSV)
     stability = _load_table(STABILITY_CSV)
 
-    _plot_lines(
+    generated_charts.append(_plot_lines(
         summary,
         "gpu_ms_median",
         CHARTS_DIR / "cache_thrashing_random_vs_sequential_median_gpu_ms.png",
         "Experiment 27: Median GPU Time by Access Pattern",
         "GPU ms (median)",
-    )
-    _plot_relative(
+    ))
+    generated_charts.append(_plot_relative(
         relative,
         summary,
         "slowdown_vs_sequential",
         CHARTS_DIR / "cache_thrashing_random_vs_sequential_slowdown_vs_sequential.png",
         "Experiment 27: Slowdown vs Sequential",
         "Slowdown factor",
-    )
-    _plot_lines(
+    ))
+    generated_charts.append(_plot_lines(
         summary,
         "gbps_median",
         CHARTS_DIR / "cache_thrashing_random_vs_sequential_estimated_gbps.png",
         "Experiment 27: Estimated GB/s by Access Pattern",
         "Estimated GB/s",
-    )
-    _plot_lines(
+    ))
+    generated_charts.append(_plot_lines(
         _attach_working_set_bytes(stability, summary),
         "p95_to_median_gpu_ms",
         CHARTS_DIR / "cache_thrashing_random_vs_sequential_stability_ratio.png",
         "Experiment 27: GPU Time Stability",
         "p95 / median GPU ms",
-    )
+    ))
 
     print(f"[ok] Wrote Experiment 27 charts to {CHARTS_DIR.relative_to(ROOT)}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

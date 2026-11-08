@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,45 @@ TEST(VulkanComputeUtilsTests, ComputeGroupCountReturnsExpectedCeiling) {
     EXPECT_EQ(VulkanComputeUtils::compute_group_count_1d(64U, 64U), 1U);
     EXPECT_EQ(VulkanComputeUtils::compute_group_count_1d(65U, 64U), 2U);
     EXPECT_EQ(VulkanComputeUtils::compute_group_count_1d(1025U, 256U), 5U);
+    EXPECT_EQ(VulkanComputeUtils::compute_group_count_1d(std::numeric_limits<uint32_t>::max(), 256U), 16777216U);
+}
+
+TEST(VulkanComputeUtilsTests, RejectsIllegalWorkgroupAndSharedMemoryRequirements) {
+    VkPhysicalDeviceLimits limits{};
+    limits.maxComputeWorkGroupSize[0] = 256U;
+    limits.maxComputeWorkGroupSize[1] = 256U;
+    limits.maxComputeWorkGroupSize[2] = 64U;
+    limits.maxComputeWorkGroupInvocations = 256U;
+    limits.maxComputeSharedMemorySize = 32768U;
+    std::string error;
+    EXPECT_TRUE(VulkanComputeUtils::validate_compute_requirements(limits, {16U, 16U, 1U}, 32768U, error));
+    EXPECT_TRUE(error.empty());
+    EXPECT_FALSE(VulkanComputeUtils::validate_compute_requirements(limits, {512U, 1U, 1U}, 0U, error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_FALSE(VulkanComputeUtils::validate_compute_requirements(limits, {256U, 2U, 1U}, 0U, error));
+    EXPECT_FALSE(VulkanComputeUtils::validate_compute_requirements(limits, {256U, 1U, 1U}, 33792U, error));
+    EXPECT_FALSE(VulkanComputeUtils::validate_compute_requirements(limits, {0U, 1U, 1U}, 0U, error));
+}
+
+TEST(VulkanComputeUtilsTests, RejectsStorageBufferDescriptorCountsAboveEitherDeviceLimit) {
+    VkPhysicalDeviceLimits limits{};
+    limits.maxPerStageDescriptorStorageBuffers = 16U;
+    limits.maxDescriptorSetStorageBuffers = 16U;
+    std::string error;
+    EXPECT_TRUE(VulkanComputeUtils::validate_storage_buffer_descriptor_requirements(limits, 16U, error));
+    EXPECT_TRUE(error.empty());
+
+    limits.maxPerStageDescriptorStorageBuffers = 4U;
+    EXPECT_FALSE(VulkanComputeUtils::validate_storage_buffer_descriptor_requirements(limits, 8U, error));
+    EXPECT_NE(error.find("maxPerStageDescriptorStorageBuffers=4"), std::string::npos);
+    EXPECT_FALSE(VulkanComputeUtils::validate_storage_buffer_descriptor_requirements(limits, 16U, error));
+
+    limits.maxPerStageDescriptorStorageBuffers = 16U;
+    limits.maxDescriptorSetStorageBuffers = 8U;
+    EXPECT_FALSE(VulkanComputeUtils::validate_storage_buffer_descriptor_requirements(limits, 16U, error));
+    EXPECT_NE(error.find("maxDescriptorSetStorageBuffers=8"), std::string::npos);
+    EXPECT_TRUE(VulkanComputeUtils::validate_storage_buffer_descriptor_requirements(limits, 8U, error));
+    EXPECT_TRUE(error.empty());
 }
 
 TEST(VulkanComputeUtilsTests, ResolveShaderPathPrefersExplicitExistingPath) {

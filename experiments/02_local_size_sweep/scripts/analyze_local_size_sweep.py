@@ -6,12 +6,24 @@ import argparse
 import json
 import re
 from datetime import datetime, timezone
+import sys
 from pathlib import Path
 from typing import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    format_problem_size,
+    measurement_revision,
+    preferred_run_id,
+    select_compatible_runs,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "02_local_size_sweep"
 
@@ -46,11 +58,7 @@ def _parse_iso8601(value: str) -> datetime | None:
 
 
 def _format_problem_size_ticks(values: np.ndarray) -> list[str]:
-    labels: list[str] = []
-    for value in values:
-        exponent = int(round(np.log2(value)))
-        labels.append(f"2^{exponent}")
-    return labels
+    return [format_problem_size(value) for value in values]
 
 
 def _extract_local_size(variant: str) -> int | None:
@@ -64,13 +72,13 @@ def _base_variant(variant: str) -> str:
     return LOCAL_SIZE_RE.sub("", variant)
 
 
-def _discover_run_files(runs_dir: Path, include_current: bool) -> list[Path]:
+def _discover_run_files(runs_dir: Path, include_current: bool, revision: str | None = None) -> list[Path]:
     paths = sorted(runs_dir.rglob("*.json")) if runs_dir.exists() else []
     if include_current and CURRENT_RUN_JSON.exists():
         current_resolved = CURRENT_RUN_JSON.resolve()
         if all(path.resolve() != current_resolved for path in paths):
             paths.append(CURRENT_RUN_JSON)
-    return paths
+    return select_compatible_runs(paths, current_path=CURRENT_RUN_JSON if include_current else None, revision=revision)
 
 
 def _relative_run_id(path: Path) -> str:
@@ -99,6 +107,7 @@ def _build_run_record(path: Path, payload: dict, frame: pd.DataFrame) -> dict:
     run_id = _relative_run_id(path)
 
     return {
+        "measurement_revision": measurement_revision(metadata),
         "run_id": run_id,
         "run_file": run_id,
         "gpu_name": gpu_name,
@@ -111,8 +120,6 @@ def _build_run_record(path: Path, payload: dict, frame: pd.DataFrame) -> dict:
         "exported_at_dt": exported_at_dt,
         "device_id": device_id,
         "device_slug": device_slug,
-        "run_signature": f"{gpu_name}|{driver_version}|{vulkan_api_version}|"
-        f"{exported_at_utc or exported_at_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}|{int(frame.shape[0])}",
         "row_count": int(frame.shape[0]),
         "correctness_pass_rate": float(frame["correctness_pass"].mean()),
         "problem_size_min": int(frame["problem_size"].min()),
@@ -129,7 +136,7 @@ def _load_local_size_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None,
         print(f"[warn] Skipping unreadable JSON: {path} ({exc})")
         return None, None
 
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, "02_local_size_sweep", path)
     if not isinstance(rows, list) or not rows:
         return None, None
 
@@ -168,12 +175,13 @@ def _load_local_size_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None,
         frame["notes"] = ""
 
     if "correctness_pass" in frame.columns:
-        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.lower().isin(["1", "true", "yes"])
+        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.strip().str.lower().isin(["1", "true", "yes"])
     else:
         frame["correctness_pass"] = False
 
     run_record = _build_run_record(path, payload, frame)
     for key in [
+        "measurement_revision",
         "run_id",
         "run_file",
         "gpu_name",
@@ -195,18 +203,12 @@ def _load_local_size_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None,
 def _load_all_runs(paths: Iterable[Path]) -> tuple[pd.DataFrame, pd.DataFrame]:
     frames: list[pd.DataFrame] = []
     run_records: list[dict] = []
-    seen_signatures: set[str] = set()
 
+    # Discovery deduplicates complete payloads; timestamps do not identify runs.
     for path in paths:
         frame, run_record = _load_local_size_rows(path)
         if frame is None or run_record is None:
             continue
-
-        run_signature = run_record["run_signature"]
-        if run_signature in seen_signatures:
-            print(f"[info] Skipping duplicate run payload: {_relative_run_id(path)}")
-            continue
-        seen_signatures.add(run_signature)
 
         frames.append(frame)
         run_records.append(run_record)
@@ -223,13 +225,15 @@ def _quantile_95(series: pd.Series) -> float:
     return float(series.quantile(0.95))
 
 
-def _write_table(frame: pd.DataFrame, output_path: Path) -> None:
+def _write_table(frame: pd.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output_path, index=False)
+    return output_path
 
 
 def _build_run_summary(all_rows: pd.DataFrame) -> pd.DataFrame:
     group_columns = [
+        "measurement_revision",
         "run_id",
         "run_file",
         "gpu_name",
@@ -370,7 +374,7 @@ def _build_operation_ratio_table(summary: pd.DataFrame) -> pd.DataFrame:
 
     merged["gpu_ms_ratio_write_over_noop"] = merged["gpu_ms_median_write"] / merged["gpu_ms_median_noop"]
     merged["throughput_ratio_write_over_noop"] = (
-        merged["throughput_median_write"] / merged["throughput_median_noop"]
+        merged["throughput_median_write"] / merged["throughput_median_noop"].where(merged["throughput_median_noop"] > 0.0)
     )
     return (
         merged[
@@ -402,7 +406,7 @@ def _build_operation_ratio_summary_table(operation_ratio: pd.DataFrame) -> pd.Da
 
 def _plot_metric_vs_local_size(
     summary: pd.DataFrame, metric_column: str, y_label: str, output_path: Path, title: str
-) -> None:
+) -> Path | None:
     if summary.empty:
         return
 
@@ -421,7 +425,7 @@ def _plot_metric_vs_local_size(
             curve = curve.sort_values("local_size_x")
             if curve.empty:
                 continue
-            label = f"d={int(dispatch_count)}, size=2^{int(round(np.log2(problem_size)))}"
+            label = f"d={int(dispatch_count)}, size={format_problem_size(problem_size)}"
             axes[row_index].plot(curve["local_size_x"], curve[metric_column], marker="o", label=label)
 
         axes[row_index].set_title(f"{variant}: {y_label} vs local_size_x")
@@ -438,9 +442,10 @@ def _plot_metric_vs_local_size(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_operation_ratio_summary(operation_ratio_summary: pd.DataFrame, output_path: Path) -> None:
+def _plot_operation_ratio_summary(operation_ratio_summary: pd.DataFrame, output_path: Path) -> Path | None:
     if operation_ratio_summary.empty:
         return
 
@@ -456,13 +461,16 @@ def _plot_operation_ratio_summary(operation_ratio_summary: pd.DataFrame, output_
         label="GPU Time Ratio",
         color="#1f77b4",
     )
-    ax.bar(
-        x + width / 2.0,
-        operation_ratio_summary["throughput_ratio_write_over_noop"],
-        width=width,
-        label="Throughput Ratio",
-        color="#ff7f0e",
-    )
+    if operation_ratio_summary["throughput_ratio_write_over_noop"].notna().any():
+        ax.bar(
+            x + width / 2.0,
+            operation_ratio_summary["throughput_ratio_write_over_noop"],
+            width=width,
+            label="Throughput Ratio",
+            color="#ff7f0e",
+        )
+    else:
+        ax.text(0.02, 0.98, "Throughput ratio undefined: no-op has no useful payload.", va="top", transform=ax.transAxes)
     ax.axhline(1.0, linestyle="--", linewidth=1.0, color="black", alpha=0.5)
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
@@ -476,9 +484,10 @@ def _plot_operation_ratio_summary(operation_ratio_summary: pd.DataFrame, output_
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_speedup_vs_ls64(speedup_vs_ls64: pd.DataFrame, output_path: Path) -> None:
+def _plot_speedup_vs_ls64(speedup_vs_ls64: pd.DataFrame, output_path: Path) -> Path | None:
     if speedup_vs_ls64.empty:
         return
 
@@ -508,6 +517,7 @@ def _plot_speedup_vs_ls64(speedup_vs_ls64: pd.DataFrame, output_path: Path) -> N
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_status_overview_table(latest_rows: pd.DataFrame) -> pd.DataFrame:
@@ -540,7 +550,7 @@ def _build_status_overview_table(latest_rows: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _plot_status_overview(status: pd.DataFrame, output_path: Path) -> None:
+def _plot_status_overview(status: pd.DataFrame, output_path: Path) -> Path | None:
     if status.empty:
         return
 
@@ -577,6 +587,7 @@ def _plot_status_overview(status: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_test_setup_table(latest_rows: pd.DataFrame, latest_run_info: pd.Series) -> pd.DataFrame:
@@ -614,7 +625,7 @@ def _build_test_setup_table(latest_rows: pd.DataFrame, latest_run_info: pd.Serie
     return pd.DataFrame(records)
 
 
-def _plot_test_setup_overview(test_setup: pd.DataFrame, output_path: Path) -> None:
+def _plot_test_setup_overview(test_setup: pd.DataFrame, output_path: Path) -> Path | None:
     if test_setup.empty:
         return
 
@@ -642,9 +653,12 @@ def _plot_test_setup_overview(test_setup: pd.DataFrame, output_path: Path) -> No
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description="Analyze Experiment 02 local size sweep runs across devices.")
     parser.add_argument(
         "--runs-dir",
@@ -657,9 +671,13 @@ def main() -> None:
         action="store_true",
         help="Do not include results/tables/benchmark_results.json as an implicit run.",
     )
+    parser.add_argument(
+        "--measurement-revision",
+        help="Analyze one revision only (default: current run, otherwise newest archive); use legacy-unversioned for old runs.",
+    )
     args = parser.parse_args()
 
-    run_files = _discover_run_files(args.runs_dir, include_current=not args.skip_current)
+    run_files = _discover_run_files(args.runs_dir, include_current=not args.skip_current, revision=args.measurement_revision)
     all_rows, run_index = _load_all_runs(run_files)
     if all_rows.empty or run_index.empty:
         raise FileNotFoundError(
@@ -670,13 +688,13 @@ def main() -> None:
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    run_index_export = run_index.drop(columns=["exported_at_dt", "run_signature"]).copy()
-    _write_table(run_index_export, TABLES_DIR / "local_size_sweep_runs_index.csv")
+    run_index_export = run_index.drop(columns=["exported_at_dt"]).copy()
+    generated_tables.append(_write_table(run_index_export, TABLES_DIR / "local_size_sweep_runs_index.csv"))
 
     run_summary = _build_run_summary(all_rows)
-    _write_table(run_summary, TABLES_DIR / "local_size_sweep_multi_run_summary.csv")
+    generated_tables.append(_write_table(run_summary, TABLES_DIR / "local_size_sweep_multi_run_summary.csv"))
 
-    latest_run_id = run_index.sort_values(["exported_at_dt", "run_id"]).iloc[-1]["run_id"]
+    latest_run_id = preferred_run_id(run_index, CURRENT_RUN_JSON if not args.skip_current else None, ROOT)
     latest_run_info = run_index[run_index["run_id"] == latest_run_id].iloc[0]
     latest_rows = all_rows[all_rows["run_id"] == latest_run_id].copy()
     latest_summary = run_summary[run_summary["run_id"] == latest_run_id].copy()
@@ -696,11 +714,11 @@ def main() -> None:
             "sample_count",
         ]
     ].sort_values(["base_variant", "problem_size", "dispatch_count", "local_size_x"])
-    _write_table(latest_summary_simple, TABLES_DIR / "local_size_sweep_summary.csv")
+    generated_tables.append(_write_table(latest_summary_simple, TABLES_DIR / "local_size_sweep_summary.csv"))
 
     best_local_size = _build_best_local_size_table(latest_summary_simple)
     if not best_local_size.empty:
-        _write_table(best_local_size, TABLES_DIR / "local_size_sweep_best_local_size.csv")
+        generated_tables.append(_write_table(best_local_size, TABLES_DIR / "local_size_sweep_best_local_size.csv"))
 
     gpu_ms_pivot = latest_summary_simple.pivot_table(
         index="problem_size",
@@ -713,50 +731,53 @@ def main() -> None:
         values="throughput_median",
     ).sort_index()
     gpu_ms_pivot.to_csv(TABLES_DIR / "local_size_sweep_gpu_ms_pivot.csv")
+    generated_tables.append(TABLES_DIR / "local_size_sweep_gpu_ms_pivot.csv")
     throughput_pivot.to_csv(TABLES_DIR / "local_size_sweep_throughput_pivot.csv")
+    generated_tables.append(TABLES_DIR / "local_size_sweep_throughput_pivot.csv")
 
     speedup_vs_ls64 = _build_speedup_vs_ls64_table(latest_summary_simple)
     if not speedup_vs_ls64.empty:
-        _write_table(speedup_vs_ls64, TABLES_DIR / "local_size_sweep_speedup_vs_ls64.csv")
+        generated_tables.append(_write_table(speedup_vs_ls64, TABLES_DIR / "local_size_sweep_speedup_vs_ls64.csv"))
 
     local_size_ranking = _build_local_size_ranking_table(speedup_vs_ls64)
     if not local_size_ranking.empty:
-        _write_table(local_size_ranking, TABLES_DIR / "local_size_sweep_local_size_ranking.csv")
+        generated_tables.append(_write_table(local_size_ranking, TABLES_DIR / "local_size_sweep_local_size_ranking.csv"))
 
     operation_ratio = _build_operation_ratio_table(latest_summary_simple)
     if not operation_ratio.empty:
-        _write_table(operation_ratio, TABLES_DIR / "local_size_sweep_operation_ratio.csv")
+        generated_tables.append(_write_table(operation_ratio, TABLES_DIR / "local_size_sweep_operation_ratio.csv"))
     operation_ratio_summary = _build_operation_ratio_summary_table(operation_ratio)
     if not operation_ratio_summary.empty:
-        _write_table(operation_ratio_summary, TABLES_DIR / "local_size_sweep_operation_ratio_summary.csv")
+        generated_tables.append(_write_table(operation_ratio_summary, TABLES_DIR / "local_size_sweep_operation_ratio_summary.csv"))
 
     status_overview = _build_status_overview_table(latest_rows)
     if not status_overview.empty:
-        _write_table(status_overview, TABLES_DIR / "local_size_sweep_status_overview.csv")
+        generated_tables.append(_write_table(status_overview, TABLES_DIR / "local_size_sweep_status_overview.csv"))
 
     test_setup = _build_test_setup_table(latest_rows, latest_run_info)
     if not test_setup.empty:
-        _write_table(test_setup, TABLES_DIR / "local_size_sweep_test_setup.csv")
+        generated_tables.append(_write_table(test_setup, TABLES_DIR / "local_size_sweep_test_setup.csv"))
 
-    _plot_metric_vs_local_size(
+    generated_charts.append(_plot_metric_vs_local_size(
         latest_summary_simple,
         metric_column="gpu_ms_median",
         y_label="gpu_ms (median)",
         output_path=CHARTS_DIR / "local_size_sweep_gpu_ms_vs_local_size.png",
         title="Experiment 02 Local Size Sweep: GPU Time",
-    )
-    _plot_metric_vs_local_size(
+    ))
+    generated_charts.append(_plot_metric_vs_local_size(
         latest_summary_simple,
         metric_column="throughput_median",
         y_label="throughput (elements/s, median)",
         output_path=CHARTS_DIR / "local_size_sweep_throughput_vs_local_size.png",
         title="Experiment 02 Local Size Sweep: Throughput",
-    )
-    _plot_speedup_vs_ls64(speedup_vs_ls64, CHARTS_DIR / "local_size_sweep_speedup_vs_ls64.png")
-    _plot_operation_ratio_summary(operation_ratio_summary, CHARTS_DIR / "local_size_sweep_operation_ratio_summary.png")
-    _plot_status_overview(status_overview, CHARTS_DIR / "local_size_sweep_status_overview.png")
-    _plot_test_setup_overview(test_setup, CHARTS_DIR / "local_size_sweep_test_setup.png")
+    ))
+    generated_charts.append(_plot_speedup_vs_ls64(speedup_vs_ls64, CHARTS_DIR / "local_size_sweep_speedup_vs_ls64.png"))
+    generated_charts.append(_plot_operation_ratio_summary(operation_ratio_summary, CHARTS_DIR / "local_size_sweep_operation_ratio_summary.png"))
+    generated_charts.append(_plot_status_overview(status_overview, CHARTS_DIR / "local_size_sweep_status_overview.png"))
+    generated_charts.append(_plot_test_setup_overview(test_setup, CHARTS_DIR / "local_size_sweep_test_setup.png"))
 
+    write_analysis_provenance(TABLES_DIR, run_files, EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
     print(f"Processed runs: {len(run_index)}")
     print(f"Latest run: {latest_run_id}")
     print(f"Devices in dataset: {run_index['device_id'].nunique()}")

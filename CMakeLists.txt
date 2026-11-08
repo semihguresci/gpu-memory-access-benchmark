@@ -89,6 +89,7 @@ else()
 endif()
 
 set(SHADER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/shaders")
+include("${CMAKE_SOURCE_DIR}/cmake/shader_dependencies.cmake")
 set(SHADER_BINARY_DIR "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${SHADER_BINARY_DIR}")
 
@@ -114,11 +115,12 @@ if(BUILD_SHADERS)
             get_filename_component(SHADER_NAME "${SHADER_FILE}" NAME)
             file(RELATIVE_PATH SHADER_RELATIVE_PATH "${SHADER_SOURCE_DIR}" "${SHADER_FILE}")
             set(SPIRV_FILE "${SHADER_BINARY_DIR}/${SHADER_NAME}.spv")
+            collect_shader_dependencies("${SHADER_FILE}" SHADER_DEPENDENCIES)
 
             add_custom_command(
                 OUTPUT "${SPIRV_FILE}"
                 COMMAND "${Vulkan_GLSLC_EXECUTABLE}" --target-env=vulkan1.1 "${SHADER_FILE}" -o "${SPIRV_FILE}"
-                DEPENDS "${SHADER_FILE}"
+                DEPENDS ${SHADER_DEPENDENCIES}
                 COMMENT "Compiling shader ${SHADER_RELATIVE_PATH}"
                 VERBATIM
             )

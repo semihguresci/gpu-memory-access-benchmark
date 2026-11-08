@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "12_gather_access_pattern"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -28,10 +40,12 @@ def _load_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing input table: {path}")
 
+    validate_derived_table(path)
     frame = pd.read_csv(path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
 
+    validate_summary_table(frame, path)
     return frame
 
 
@@ -47,7 +61,7 @@ def _sort_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _plot_bars(frame: pd.DataFrame, x_column: str, y_column: str, output_path: Path, title: str, ylabel: str,
-               *, yscale: str | None = None, baseline: float | None = None, color: str = "tab:blue") -> None:
+               *, yscale: str | None = None, baseline: float | None = None, color: str = "tab:blue") -> Path | None:
     plot_frame = _sort_frame(frame)
     x_values = plot_frame[x_column].astype(str).to_list()
     y_values = plot_frame[y_column].astype(float).to_list()
@@ -68,14 +82,17 @@ def _plot_bars(frame: pd.DataFrame, x_column: str, y_column: str, output_path: P
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, "12_gather_access_pattern")
     summary = _load_table(SUMMARY_CSV)
     relative = _load_table(RELATIVE_CSV)
     stability = _load_table(STABILITY_CSV)
 
-    _plot_bars(
+    generated_charts.append(_plot_bars(
         summary,
         "variant",
         "gpu_ms_median",
@@ -84,8 +101,8 @@ def main() -> None:
         "GPU ms (median)",
         yscale="log",
         color="tab:blue",
-    )
-    _plot_bars(
+    ))
+    generated_charts.append(_plot_bars(
         summary,
         "variant",
         "gbps_median",
@@ -94,8 +111,8 @@ def main() -> None:
         "GB/s (median)",
         yscale="log",
         color="tab:green",
-    )
-    _plot_bars(
+    ))
+    generated_charts.append(_plot_bars(
         relative,
         "variant",
         "slowdown_vs_identity",
@@ -104,8 +121,8 @@ def main() -> None:
         "Slowdown factor",
         baseline=1.0,
         color="tab:red",
-    )
-    _plot_bars(
+    ))
+    generated_charts.append(_plot_bars(
         stability,
         "variant",
         "p95_to_median_gpu_ms",
@@ -114,9 +131,10 @@ def main() -> None:
         "p95 / median GPU ms",
         baseline=1.0,
         color="tab:orange",
-    )
+    ))
 
     print(f"[ok] Wrote Experiment 12 charts to {CHARTS_DIR.relative_to(ROOT)}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

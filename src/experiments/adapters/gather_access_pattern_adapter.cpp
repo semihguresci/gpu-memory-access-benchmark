@@ -13,6 +13,7 @@ bool run_gather_access_pattern_experiment_adapter(VulkanContext& context, const 
         GatherAccessPatternExperimentConfig{
             .max_buffer_bytes = static_cast<std::size_t>(
                 ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 3U)),
+            .scratch_size_bytes = static_cast<std::size_t>(options.scratch_size_bytes),
             .shader_path = "",
             .verbose_progress = options.verbose_progress,
         });

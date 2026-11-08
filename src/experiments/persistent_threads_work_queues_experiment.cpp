@@ -241,7 +241,9 @@ uint64_t compute_estimated_global_traffic_bytes(uint32_t task_count, uint32_t wo
     const uint64_t successful_claims = (static_cast<uint64_t>(task_count) + kWorkgroupSize - 1U) / kWorkgroupSize;
     const uint64_t worker_groups = worker_threads / kWorkgroupSize;
     const uint64_t queue_atomic_ops = successful_claims + worker_groups;
-    return payload + (queue_atomic_ops * sizeof(uint32_t));
+    // Model each global uint32 atomic as one read plus one write, independently
+    // of cache behavior or the physical DRAM transactions servicing the request.
+    return payload + (queue_atomic_ops * 2U * sizeof(uint32_t));
 }
 
 double compute_effective_gbps(uint32_t task_count, uint32_t worker_threads, SchedulingMode mode, double dispatch_ms) {
@@ -481,6 +483,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(constants)), &constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -491,12 +494,16 @@ void record_case_notes(std::string& notes, SchedulingMode mode, DistributionKind
     append_note(notes, "distribution=" + std::string(distribution_name(distribution)));
     append_note(notes, "task_count=" + std::to_string(task_count));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
-    append_note(notes, "queue_claim_tasks=" + std::to_string(kWorkgroupSize));
+    append_note(notes,
+                "queue_claim_tasks=" + std::to_string(mode == SchedulingMode::PersistentQueue ? kWorkgroupSize : 0U));
     append_note(notes, "persistent_worker_threads=" + std::to_string(worker_threads));
     append_note(notes, "average_iterations_per_task=" + std::to_string(prepared.average_iterations));
     append_note(notes, "logical_payload_bytes=" + std::to_string(logical_payload_bytes));
     append_note(notes, "estimated_global_total_bytes=" + std::to_string(estimated_global_total_bytes));
     append_note(notes, "gbps_mode=estimated_global_bytes");
+    append_note(notes, "gbps_basis=estimated_source_level_storage_buffer_bytes");
+    append_note(notes, "traffic_model=source_storage_buffer_operations_not_physical_dram");
+    append_note(notes, "atomic_rmw_model_bytes=8");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
     }
@@ -575,6 +582,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, mode, distribution, task_count, worker_threads, prepared, logical_payload_bytes,
                           estimated_global_total_bytes, correctness_pass, dispatch_ok);
 

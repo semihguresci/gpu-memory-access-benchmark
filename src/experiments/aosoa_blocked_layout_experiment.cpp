@@ -2,6 +2,7 @@
 
 #include "utils/buffer_utils.hpp"
 #include "utils/experiment_metrics.hpp"
+#include "utils/float_validation.hpp"
 #include "utils/layout_assert.hpp"
 #include "utils/vulkan_compute_utils.hpp"
 #include "vulkan_context.hpp"
@@ -29,12 +30,6 @@ constexpr uint32_t kDispatchCount = 1U;
 constexpr float kMassIncrement = 0.000001F;
 constexpr float kValidationEpsilon = 1.0e-5F;
 constexpr std::array<uint32_t, 4> kAosoaBlockSizes = {4U, 8U, 16U, 32U};
-
-enum class LayoutVariant : uint8_t {
-    kAos = 0U,
-    kSoa = 1U,
-    kAosoa = 2U,
-};
 
 struct ParticleAosStd430 {
     float px;
@@ -181,8 +176,7 @@ void append_note(std::string& notes, const std::string& note) {
 }
 
 bool nearly_equal(float lhs, float rhs) {
-    const float scale = std::max({1.0F, std::fabs(lhs), std::fabs(rhs)});
-    return std::fabs(lhs - rhs) <= (kValidationEpsilon * scale);
+    return FloatValidation::nearly_equal(lhs, rhs, kValidationEpsilon);
 }
 
 ParticleAosStd430 make_seed_particle(uint32_t index) {
@@ -731,6 +725,7 @@ double run_aos_or_soa_dispatch(VulkanContext& context, uint32_t particles, VkPip
         for (uint32_t dispatch_index = 0U; dispatch_index < kDispatchCount; ++dispatch_index) {
             vkCmdDispatch(command_buffer, group_count, 1U, 1U);
         }
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -757,27 +752,30 @@ double run_aosoa_dispatch(VulkanContext& context, uint32_t particles, uint32_t b
         for (uint32_t dispatch_index = 0U; dispatch_index < kDispatchCount; ++dispatch_index) {
             vkCmdDispatch(command_buffer, group_count, 1U, 1U);
         }
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
-double bytes_per_particle(LayoutVariant variant) {
-    if (variant == LayoutVariant::kAos) {
-        return static_cast<double>(kFloatsPerParticle * sizeof(float) * 2U);
-    }
+std::string memory_placement_notes(const BufferResource& buffer) {
+    return "memory_metadata_scope=first_storage_buffer;memory_type_index=" + std::to_string(buffer.memory_type_index) +
+           ";memory_heap_index=" + std::to_string(buffer.heap_index) +
+           ";memory_property_flags=" + std::to_string(buffer.memory_properties) +
+           ";first_buffer_payload_bytes=" + std::to_string(buffer.size) +
+           ";first_buffer_allocation_bytes=" + std::to_string(buffer.allocation_size);
+}
 
+double bytes_per_particle() {
     constexpr uint32_t kReadFloats = 12U;
     constexpr uint32_t kWriteFloats = 8U;
     return static_cast<double>((kReadFloats + kWriteFloats) * sizeof(float));
 }
 
-double compute_effective_gbps(LayoutVariant variant, uint32_t particles, uint32_t dispatch_count,
-                              double dispatch_gpu_ms) {
+double compute_effective_gbps(uint32_t particles, uint32_t dispatch_count, double dispatch_gpu_ms) {
     if (!std::isfinite(dispatch_gpu_ms) || dispatch_gpu_ms <= 0.0) {
         return 0.0;
     }
 
-    const double bytes =
-        bytes_per_particle(variant) * static_cast<double>(particles) * static_cast<double>(dispatch_count);
+    const double bytes = bytes_per_particle() * static_cast<double>(particles) * static_cast<double>(dispatch_count);
     return bytes / (dispatch_gpu_ms * 1.0e6);
 }
 
@@ -786,9 +784,9 @@ std::string build_case_name(const std::string& variant, uint32_t particles) {
 }
 
 template <typename PrepareFn, typename DispatchFn, typename ValidateFn>
-void run_variant_case(const BenchmarkRunner& runner, LayoutVariant layout_variant, const std::string& variant_name,
-                      uint32_t particles, uint32_t group_count, PrepareFn prepare_fn, DispatchFn dispatch_fn,
-                      ValidateFn validate_fn, const std::string& variant_notes, bool verbose_progress,
+void run_variant_case(const BenchmarkRunner& runner, const std::string& variant_name, uint32_t particles,
+                      uint32_t group_count, PrepareFn prepare_fn, DispatchFn dispatch_fn, ValidateFn validate_fn,
+                      const std::string& variant_notes, bool verbose_progress,
                       AosoaBlockedLayoutExperimentOutput& output) {
     if (verbose_progress) {
         std::cout << "[" << kExperimentId << "] Variant start: name=" << variant_name << ", particles=" << particles
@@ -836,11 +834,14 @@ void run_variant_case(const BenchmarkRunner& runner, LayoutVariant layout_varian
         append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
         append_note(notes, "group_count_x=" + std::to_string(group_count));
         append_note(notes, "dispatch_count=" + std::to_string(kDispatchCount));
-        append_note(notes,
-                    "bytes_per_particle=" + std::to_string(static_cast<uint64_t>(bytes_per_particle(layout_variant))));
+        append_note(notes, "bytes_per_particle=" + std::to_string(static_cast<uint64_t>(bytes_per_particle())));
         if (!variant_notes.empty()) {
             append_note(notes, variant_notes);
         }
+        append_note(notes, "gbps_basis=useful_field_payload");
+        append_note(notes, "requested_read_bytes_per_particle=48");
+        append_note(notes, "requested_write_bytes_per_particle=32");
+        append_note(notes, "requested_traffic_basis=source_field_operations_not_physical_dram");
         if (!dispatch_ok) {
             append_note(notes, "dispatch_ms_non_finite");
         }
@@ -859,6 +860,7 @@ void run_variant_case(const BenchmarkRunner& runner, LayoutVariant layout_varian
                       << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant_name,
@@ -868,7 +870,7 @@ void run_variant_case(const BenchmarkRunner& runner, LayoutVariant layout_varian
             .gpu_ms = dispatch_ms,
             .end_to_end_ms = end_to_end_ms.count(),
             .throughput = compute_throughput_elements_per_second(particles, kDispatchCount, dispatch_ms),
-            .gbps = compute_effective_gbps(layout_variant, particles, kDispatchCount, dispatch_ms),
+            .gbps = compute_effective_gbps(particles, kDispatchCount, dispatch_ms),
             .correctness_pass = correctness,
             .notes = notes,
         });
@@ -906,14 +908,24 @@ run_aosoa_blocked_layout_experiment(VulkanContext& context, const BenchmarkRunne
         return output;
     }
 
+    VkPhysicalDeviceProperties device_properties{};
+    vkGetPhysicalDeviceProperties(context.physical_device(), &device_properties);
+    std::string descriptor_error;
+    if (!VulkanComputeUtils::validate_storage_buffer_descriptor_requirements(device_properties.limits,
+                                                                             kFloatArraysForSoa, descriptor_error)) {
+        std::cerr << "AoSoA blocked layout experiment is unsupported on this device: " << descriptor_error << ".\n";
+        return output;
+    }
+    const uint64_t dispatch_limited_elements =
+        static_cast<uint64_t>(device_properties.limits.maxComputeWorkGroupCount[0]) * kWorkgroupSize;
     const uint64_t max_particles_u64 = config.max_buffer_bytes / (kFloatsPerParticle * sizeof(float));
     if (max_particles_u64 == 0U) {
         std::cerr << "Scratch buffer too small for AoSoA blocked layout experiment.\n";
         return output;
     }
 
-    uint32_t max_particles =
-        static_cast<uint32_t>(std::min<uint64_t>(max_particles_u64, std::numeric_limits<uint32_t>::max()));
+    uint32_t max_particles = static_cast<uint32_t>(std::min(
+        {max_particles_u64, dispatch_limited_elements, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())}));
     while (max_particles > 0U && compute_aosoa_storage_bytes_for_particles(max_particles, kAosoaBlockSizes.back()) >
                                      static_cast<VkDeviceSize>(config.max_buffer_bytes)) {
         --max_particles;
@@ -982,7 +994,7 @@ run_aosoa_blocked_layout_experiment(VulkanContext& context, const BenchmarkRunne
         const uint32_t group_count = VulkanComputeUtils::compute_group_count_1d(particles, kWorkgroupSize);
 
         run_variant_case(
-            runner, LayoutVariant::kAos, "aos", particles, group_count,
+            runner, "aos", particles, group_count,
             [&](uint32_t count) {
                 fill_aos_seed_particles(aos_particles, count);
             },
@@ -993,10 +1005,10 @@ run_aosoa_blocked_layout_experiment(VulkanContext& context, const BenchmarkRunne
             [&](uint32_t count) {
                 return validate_aos_particles(aos_particles, count);
             },
-            "", verbose_progress, output);
+            memory_placement_notes(aos_resources.storage_buffer), verbose_progress, output);
 
         run_variant_case(
-            runner, LayoutVariant::kSoa, "soa", particles, group_count,
+            runner, "soa", particles, group_count,
             [&](uint32_t count) {
                 fill_soa_seed_arrays(soa_arrays, count);
             },
@@ -1007,14 +1019,15 @@ run_aosoa_blocked_layout_experiment(VulkanContext& context, const BenchmarkRunne
             [&](uint32_t count) {
                 return validate_soa_arrays(soa_arrays, count);
             },
-            "", verbose_progress, output);
+            memory_placement_notes(soa_resources.storage_buffers.front()), verbose_progress, output);
 
         for (uint32_t block_size : kAosoaBlockSizes) {
             const std::string variant_name = "aosoa_b" + std::to_string(block_size);
-            const std::string variant_notes = "block_size=" + std::to_string(block_size);
+            const std::string variant_notes = "block_size=" + std::to_string(block_size) + ";" +
+                                              memory_placement_notes(aosoa_resources.storage_buffer);
 
             run_variant_case(
-                runner, LayoutVariant::kAosoa, variant_name, particles, group_count,
+                runner, variant_name, particles, group_count,
                 [&](uint32_t count) {
                     fill_aosoa_seed_data(aosoa_data, count, block_size);
                 },

@@ -39,6 +39,14 @@ TEST(ScalarTypeWidthUtilsTests, BufferSizeForVariantUsesPackedStorageUnits) {
               static_cast<VkDeviceSize>(5U * sizeof(uint32_t)));
 }
 
+TEST(ScalarTypeWidthUtilsTests, PackedCountsDoNotOverflowAtUint32Limit) {
+    constexpr auto kCount = std::numeric_limits<uint32_t>::max();
+    EXPECT_EQ(ScalarTypeWidthUtils::storage_units_for_variant(WidthVariant::kFp16Storage, kCount), 2147483648U);
+    EXPECT_EQ(ScalarTypeWidthUtils::storage_units_for_variant(WidthVariant::kU16, kCount), 2147483648U);
+    EXPECT_EQ(ScalarTypeWidthUtils::storage_units_for_variant(WidthVariant::kU8, kCount), 1073741824U);
+    EXPECT_EQ(ScalarTypeWidthUtils::buffer_size_for_variant(WidthVariant::kU8, kCount), VkDeviceSize{4294967296ULL});
+}
+
 TEST(ScalarTypeWidthUtilsTests, StorageBytesPerElementMatchesVariantWidth) {
     EXPECT_DOUBLE_EQ(ScalarTypeWidthUtils::storage_bytes_per_element(WidthVariant::kFp32), 4.0);
     EXPECT_DOUBLE_EQ(ScalarTypeWidthUtils::storage_bytes_per_element(WidthVariant::kU32), 4.0);

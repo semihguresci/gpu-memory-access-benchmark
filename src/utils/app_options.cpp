@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -23,6 +24,11 @@ bool parse_size(const std::string& value, VkDeviceSize& out_size) {
     if (std::isdigit(static_cast<unsigned char>(value.back())) == 0) {
         suffix = static_cast<char>(std::toupper(static_cast<unsigned char>(value.back())));
         number_part = value.substr(0, value.size() - 1);
+    }
+    if (number_part.empty() || !std::ranges::all_of(number_part, [](unsigned char character) {
+            return std::isdigit(character) != 0;
+        })) {
+        return false;
     }
 
     std::size_t parsed = 0;
@@ -48,6 +54,9 @@ bool parse_size(const std::string& value, VkDeviceSize& out_size) {
         return false;
     }
 
+    if (base > std::numeric_limits<VkDeviceSize>::max() / multiplier) {
+        return false;
+    }
     out_size = static_cast<VkDeviceSize>(base * multiplier);
     return out_size > 0;
 }
@@ -168,6 +177,9 @@ AppOptions ArgumentParser::parse(int argc, char** argv, const std::vector<std::s
     app.add_option(
         "--size", size_text,
         "Total scratch budget in bytes or with K/M/G suffix; experiments may split it across multiple buffers");
+    app.add_option("--device", options.device_selection,
+                   "Physical device selection: 0-based index among enumerated devices, or a case-insensitive "
+                   "substring of the deviceName. Empty selects the first compute-capable device");
     app.add_option("--output", options.output_path, "Output JSON path");
 
     try {

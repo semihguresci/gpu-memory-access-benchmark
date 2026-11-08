@@ -38,7 +38,6 @@ const uint kMaxClusterCount = 16u;
 // counters locally. This bounds device-wide atomic traffic by workgroup count.
 shared uint local_visible_count;
 shared uint visible_base;
-shared uint local_visible_ids[256];
 shared uint local_cluster_counts[kMaxClusterCount];
 
 bool is_visible(vec3 position_value) {

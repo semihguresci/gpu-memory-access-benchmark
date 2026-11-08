@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Plot only tables bound to validated raw measurements.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "26_warp_level_coalescing_alignment"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -21,7 +33,9 @@ def _load_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing input table: {path}")
 
+    validate_derived_table(path)
     frame = pd.read_csv(path)
+    validate_summary_table(frame, path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
 
@@ -38,7 +52,7 @@ def _plot_series(
     *,
     baseline: float | None = None,
     color: str = "tab:blue",
-) -> None:
+) -> Path | None:
     plot_frame = frame.sort_values(x_column).reset_index(drop=True)
     x_values = plot_frame[x_column].to_numpy(dtype=float)
     y_values = plot_frame[y_column].to_numpy(dtype=float)
@@ -58,9 +72,12 @@ def _plot_series(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, EXPERIMENT_ID)
     summary = _load_table(SUMMARY_CSV)
     relative = _load_table(RELATIVE_CSV)
     stability = _load_table(STABILITY_CSV)
@@ -69,7 +86,7 @@ def main() -> None:
     if aligned_summary.empty:
         raise ValueError("Missing aligned baseline row in summary table.")
 
-    _plot_series(
+    generated_charts.append(_plot_series(
         summary,
         "alignment_offset_bytes",
         "gpu_ms_median",
@@ -77,8 +94,8 @@ def main() -> None:
         "Experiment 26: Median GPU Time by Alignment Offset",
         "GPU ms (median)",
         color="tab:blue",
-    )
-    _plot_series(
+    ))
+    generated_charts.append(_plot_series(
         summary,
         "alignment_offset_bytes",
         "gbps_median",
@@ -86,8 +103,8 @@ def main() -> None:
         "Experiment 26: Median Effective Bandwidth by Alignment Offset",
         "GB/s (median)",
         color="tab:green",
-    )
-    _plot_series(
+    ))
+    generated_charts.append(_plot_series(
         relative,
         "alignment_offset_bytes",
         "slowdown_vs_aligned",
@@ -96,8 +113,8 @@ def main() -> None:
         "Slowdown factor",
         baseline=1.0,
         color="tab:red",
-    )
-    _plot_series(
+    ))
+    generated_charts.append(_plot_series(
         stability,
         "alignment_offset_bytes",
         "p95_to_median_gpu_ms",
@@ -106,7 +123,7 @@ def main() -> None:
         "p95 / median GPU ms",
         baseline=1.0,
         color="tab:orange",
-    )
+    ))
 
     resolved_charts = CHARTS_DIR.resolve()
     try:
@@ -114,6 +131,7 @@ def main() -> None:
     except ValueError:
         charts_label = resolved_charts.as_posix()
     print(f"[ok] Wrote Experiment 26 charts to {charts_label}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

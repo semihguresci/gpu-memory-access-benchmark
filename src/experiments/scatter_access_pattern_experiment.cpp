@@ -292,6 +292,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& resources, 
         vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), push_constants.data());
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -546,6 +547,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
                       << ", correctness=" << (correctness_pass ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant_name,

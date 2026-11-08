@@ -73,6 +73,9 @@ void run_persistent_queue() {
             const uint iteration_count = task_costs_buffer.values[task_index];
             output_buffer.values[task_index] = execute_task(task_index, iteration_count);
         }
+        // Every invocation must finish reading this chunk before lane 0 can
+        // replace chunk_start with the next claim, including inactive tail lanes.
+        barrier();
     }
 }
 

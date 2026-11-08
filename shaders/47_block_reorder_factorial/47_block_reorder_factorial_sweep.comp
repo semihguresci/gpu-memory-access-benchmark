@@ -1,0 +1,47 @@
+// Experiment 47: Block Reorder Factorial
+// Shader role: cache-eviction sweep pass.
+// What this experiment tests: nothing itself. This pass streams a dedicated,
+// cache-capacity-exceeding eviction buffer once outside the timed dispatch as a
+// reproducible cache perturbation before the evicted-residency variants run.
+// Reading tip: It never reads or writes the source dataset. The eviction buffer
+// is uninitialized device-local memory; its content is irrelevant, only the
+// number of distinct lines touched matters. Each invocation owns one output
+// word and reduces a disjoint sequence of chunks into it. The main dispatch
+// later rewrites the discard output region completely.
+
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) readonly buffer EvictionBuffer {
+    uint values[];
+} eviction_buffer;
+
+layout(set = 0, binding = 1) writeonly buffer DestinationBuffer {
+    uint values[];
+} dst_buffer;
+
+layout(push_constant) uniform EvictPush {
+    uint eviction_element_count;   // words in the eviction buffer
+    uint output_element_count;     // words in the output buffer
+    uint unused_0;
+    uint unused_1;
+} evict_push;
+
+void main() {
+    const uint id = gl_GlobalInvocationID.x;
+    const uint chunk_count = evict_push.eviction_element_count / 8u;
+    const uint invocation_count = min(chunk_count, evict_push.output_element_count);
+    if (id >= invocation_count) {
+        return;
+    }
+
+    uint mix = id;
+    for (uint chunk = id; chunk < chunk_count; chunk += invocation_count) {
+        const uint base = chunk * 8u;
+        for (uint k = 0u; k < 8u; ++k) {
+            mix = (mix ^ eviction_buffer.values[base + k]) + 1013904223u;
+        }
+    }
+    dst_buffer.values[id] = mix;
+}

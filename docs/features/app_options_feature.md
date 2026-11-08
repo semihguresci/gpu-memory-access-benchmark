@@ -29,6 +29,7 @@ Parses runtime options and validates experiment selection against the generated 
 ## Size Parsing
 - Accepts bytes or suffix forms: `K`, `M`, `G`.
 - Examples: `4194304`, `4M`, `1G`.
+- The numeric part must contain only decimal digits, with a positive result. Signs and suffix multiplication beyond `VkDeviceSize` are rejected before multiplication.
 
 ## Failure Behavior
 - Prints actionable stderr messages.

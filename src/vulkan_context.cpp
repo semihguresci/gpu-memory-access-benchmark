@@ -1,8 +1,12 @@
 #include "vulkan_context.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <vector>
 
 namespace {
@@ -38,7 +42,7 @@ VulkanContext::~VulkanContext() {
     shutdown();
 }
 
-bool VulkanContext::initialize(bool enable_validation) {
+bool VulkanContext::initialize(bool enable_validation, const std::string& device_selection) {
     validation_enabled_ = enable_validation;
 
     if (!create_instance(enable_validation)) {
@@ -51,9 +55,11 @@ bool VulkanContext::initialize(bool enable_validation) {
         }
     }
 
-    if (!pick_physical_device()) {
+    if (!pick_physical_device(device_selection)) {
         return false;
     }
+
+    query_selected_device_uuid();
 
     if (!create_logical_device()) {
         return false;
@@ -72,7 +78,10 @@ bool VulkanContext::initialize(bool enable_validation) {
 
 void VulkanContext::shutdown() {
     if (device_ != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(device_);
+        const VkResult idle_result = vkDeviceWaitIdle(device_);
+        if (idle_result != VK_SUCCESS) {
+            std::cerr << "vkDeviceWaitIdle failed during teardown with VkResult=" << idle_result << ".\n";
+        }
 
         gpu_timestamp_timer_.shutdown(device_);
 
@@ -102,6 +111,9 @@ void VulkanContext::shutdown() {
     compute_queue_ = VK_NULL_HANDLE;
     compute_queue_family_index_ = 0;
     gpu_timestamps_supported_ = false;
+    device_uuid_ = {};
+    device_uuid_valid_ = false;
+    enumerated_devices_.clear();
     validation_enabled_ = false;
 }
 
@@ -171,6 +183,7 @@ double VulkanContext::measure_gpu_time_ms(const std::function<void(VkCommandBuff
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer_;
 
+    const auto submit_start = std::chrono::steady_clock::now();
     if (vkQueueSubmit(compute_queue_, 1, &submit_info, submit_fence_) != VK_SUCCESS) {
         return std::numeric_limits<double>::quiet_NaN();
     }
@@ -180,7 +193,8 @@ double VulkanContext::measure_gpu_time_ms(const std::function<void(VkCommandBuff
     }
 
     double out_ms = std::numeric_limits<double>::quiet_NaN();
-    if (!gpu_timestamp_timer_.resolve_milliseconds(device_, out_ms)) {
+    const std::chrono::duration<double, std::milli> elapsed_wall = std::chrono::steady_clock::now() - submit_start;
+    if (!gpu_timestamp_timer_.resolve_milliseconds(device_, elapsed_wall.count(), out_ms)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
@@ -241,9 +255,15 @@ bool VulkanContext::create_instance(bool enable_validation) {
 
 bool VulkanContext::check_validation_layer_support() {
     uint32_t layer_count = 0;
-    vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
+    if (vkEnumerateInstanceLayerProperties(&layer_count, nullptr) != VK_SUCCESS) {
+        std::cerr << "Could not enumerate Vulkan instance layer count.\n";
+        return false;
+    }
     std::vector<VkLayerProperties> available_layers(layer_count);
-    vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
+    if (vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data()) != VK_SUCCESS) {
+        std::cerr << "Could not enumerate Vulkan instance layers.\n";
+        return false;
+    }
 
     for (const auto& layer : available_layers) {
         if (std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) {
@@ -256,9 +276,15 @@ bool VulkanContext::check_validation_layer_support() {
 
 bool VulkanContext::check_debug_utils_extension_support() {
     uint32_t extension_count = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr) != VK_SUCCESS) {
+        std::cerr << "Could not enumerate Vulkan instance extension count.\n";
+        return false;
+    }
     std::vector<VkExtensionProperties> available_extensions(extension_count);
-    vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, available_extensions.data());
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, available_extensions.data()) != VK_SUCCESS) {
+        std::cerr << "Could not enumerate Vulkan instance extensions.\n";
+        return false;
+    }
 
     for (const auto& extension : available_extensions) {
         if (std::strcmp(extension.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) {
@@ -323,28 +349,156 @@ std::optional<uint32_t> VulkanContext::find_compute_queue_family(VkPhysicalDevic
     return std::nullopt;
 }
 
-bool VulkanContext::pick_physical_device() {
+bool VulkanContext::pick_physical_device(const std::string& device_selection) {
     uint32_t device_count = 0;
-    vkEnumeratePhysicalDevices(instance_, &device_count, nullptr);
+    if (vkEnumeratePhysicalDevices(instance_, &device_count, nullptr) != VK_SUCCESS) {
+        std::cerr << "Could not enumerate Vulkan physical device count.\n";
+        return false;
+    }
     if (device_count == 0) {
         std::cerr << "No Vulkan physical devices found.\n";
         return false;
     }
 
     std::vector<VkPhysicalDevice> devices(device_count);
-    vkEnumeratePhysicalDevices(instance_, &device_count, devices.data());
+    if (vkEnumeratePhysicalDevices(instance_, &device_count, devices.data()) != VK_SUCCESS) {
+        std::cerr << "Could not enumerate Vulkan physical devices.\n";
+        return false;
+    }
 
-    for (VkPhysicalDevice candidate : devices) {
-        const auto compute_index = find_compute_queue_family(candidate);
-        if (compute_index.has_value()) {
-            physical_device_ = candidate;
-            compute_queue_family_index_ = *compute_index;
-            return true;
+    enumerated_devices_.clear();
+    enumerated_devices_.reserve(devices.size());
+    for (std::size_t index = 0; index < devices.size(); ++index) {
+        EnumeratedDeviceInfo info{};
+        info.index = static_cast<uint32_t>(index);
+        info.has_compute_queue = find_compute_queue_family(devices[index]).has_value();
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(devices[index], &properties);
+        info.name = properties.deviceName;
+        enumerated_devices_.push_back(std::move(info));
+    }
+
+    VkPhysicalDevice selected_device = VK_NULL_HANDLE;
+    if (device_selection.empty()) {
+        for (VkPhysicalDevice candidate : devices) {
+            const auto compute_index = find_compute_queue_family(candidate);
+            if (compute_index.has_value()) {
+                physical_device_ = candidate;
+                compute_queue_family_index_ = *compute_index;
+                return true;
+            }
+        }
+        std::cerr << describe_enumerated_devices() << "\n";
+        std::cerr << "No device with a compute queue family found.\n";
+        return false;
+    }
+
+    const bool index_selection =
+        !device_selection.empty() && std::ranges::all_of(device_selection, [](unsigned char character) {
+            return std::isdigit(character) != 0;
+        });
+    if (index_selection) {
+        uint64_t requested_index = 0;
+        try {
+            requested_index = std::stoull(device_selection);
+        } catch (const std::exception&) {
+            std::cerr << "Invalid --device index: '" << device_selection << "'.\n";
+            std::cerr << describe_enumerated_devices() << "\n";
+            return false;
+        }
+        if (requested_index >= devices.size()) {
+            std::cerr << "--device index " << requested_index << " is out of range.\n";
+            std::cerr << describe_enumerated_devices() << "\n";
+            return false;
+        }
+        selected_device = devices[static_cast<std::size_t>(requested_index)];
+    } else {
+        std::string requested_name;
+        requested_name.reserve(device_selection.size());
+        for (const unsigned char character : device_selection) {
+            requested_name.push_back(static_cast<char>(std::tolower(character)));
+        }
+        for (VkPhysicalDevice candidate : devices) {
+            VkPhysicalDeviceProperties properties{};
+            vkGetPhysicalDeviceProperties(candidate, &properties);
+            std::string candidate_name = properties.deviceName;
+            std::ranges::transform(candidate_name, candidate_name.begin(), [](unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            });
+            if (candidate_name.find(requested_name) != std::string::npos) {
+                selected_device = candidate;
+                break;
+            }
+        }
+        if (selected_device == VK_NULL_HANDLE) {
+            std::cerr << "No Vulkan physical device matches --device '" << device_selection << "'.\n";
+            std::cerr << describe_enumerated_devices() << "\n";
+            return false;
         }
     }
 
-    std::cerr << "No device with a compute queue family found.\n";
-    return false;
+    const auto compute_index = find_compute_queue_family(selected_device);
+    if (!compute_index.has_value()) {
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(selected_device, &properties);
+        std::cerr << "Selected device '" << properties.deviceName
+                  << "' has no compute queue family and cannot run this benchmark.\n";
+        std::cerr << describe_enumerated_devices() << "\n";
+        return false;
+    }
+
+    physical_device_ = selected_device;
+    compute_queue_family_index_ = *compute_index;
+    return true;
+}
+
+void VulkanContext::query_selected_device_uuid() {
+    if (physical_device_ == VK_NULL_HANDLE) {
+        return;
+    }
+
+    // vkGetPhysicalDeviceProperties2 and deviceUUID are core since Vulkan 1.1,
+    // and the instance is always created with API version 1.2 or later.
+    VkPhysicalDeviceIDProperties id_properties{};
+    id_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+    VkPhysicalDeviceProperties2 properties2{};
+    properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties2.pNext = &id_properties;
+    vkGetPhysicalDeviceProperties2(physical_device_, &properties2);
+
+    std::array<uint8_t, VK_UUID_SIZE> uuid{};
+    std::memcpy(uuid.data(), id_properties.deviceUUID, VK_UUID_SIZE);
+    device_uuid_ = uuid;
+    device_uuid_valid_ = true;
+}
+
+std::string VulkanContext::selected_device_uuid_hex() const {
+    if (!device_uuid_valid_) {
+        return "unknown";
+    }
+
+    static constexpr std::array<char, 17> kHexDigits{"0123456789abcdef"};
+    std::string hex_string;
+    hex_string.reserve(device_uuid_.size() * 2U);
+    for (const uint8_t byte : device_uuid_) {
+        hex_string.push_back(kHexDigits[(byte >> 4U) & 0xFU]);
+        hex_string.push_back(kHexDigits[byte & 0xFU]);
+    }
+    return hex_string;
+}
+
+std::string VulkanContext::describe_enumerated_devices() const {
+    if (enumerated_devices_.empty()) {
+        return "No Vulkan devices were enumerated.";
+    }
+
+    std::ostringstream stream;
+    stream << "Available Vulkan devices:";
+    for (const EnumeratedDeviceInfo& info : enumerated_devices_) {
+        stream << "\n  [" << info.index << "] " << info.name
+               << " (compute queue: " << (info.has_compute_queue ? "yes" : "no") << ")";
+    }
+    return stream.str();
 }
 
 bool VulkanContext::create_logical_device() {
@@ -419,7 +573,8 @@ bool VulkanContext::create_timestamp_query_pool() {
 
     gpu_timestamp_timer_.shutdown(device_);
 
-    if (!gpu_timestamp_timer_.initialize(device_, timestamp_period_ns)) {
+    if (!gpu_timestamp_timer_.initialize(device_, timestamp_period_ns,
+                                         families[compute_queue_family_index_].timestampValidBits)) {
         std::cerr << "vkCreateQueryPool failed. GPU timestamps disabled.\n";
         gpu_timestamps_supported_ = false;
         return true;

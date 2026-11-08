@@ -248,10 +248,11 @@ uint64_t compute_estimated_global_traffic_bytes(uint32_t entity_count, uint32_t 
     const uint64_t input_bytes = static_cast<uint64_t>(entity_count) * sizeof(EntityRecord);
     const uint64_t visible_output_bytes = static_cast<uint64_t>(visible_count) * sizeof(uint32_t);
     const uint64_t workgroup_count = (static_cast<uint64_t>(entity_count) + kWorkgroupSize - 1U) / kWorkgroupSize;
-    uint64_t counter_atomic_bytes = workgroup_count * sizeof(uint32_t);
-    if (mode == CullingMode::ClusteredCulling) {
-        counter_atomic_bytes += workgroup_count * kClusterCount * sizeof(uint32_t);
-    }
+    const uint64_t counter_atomic_ops =
+        workgroup_count * ((mode == CullingMode::ClusteredCulling) ? (1U + kClusterCount) : 1U);
+    // Model each global uint32 atomic as one read plus one write. Shared-memory
+    // atomics, compiler/cache effects, and physical DRAM traffic are excluded.
+    const uint64_t counter_atomic_bytes = counter_atomic_ops * 2U * sizeof(uint32_t);
     return input_bytes + visible_output_bytes + counter_atomic_bytes;
 }
 
@@ -527,6 +528,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(constants)), &constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -548,6 +550,9 @@ void record_case_notes(std::string& notes, CullingMode mode, DistributionKind di
     append_note(notes, "logical_payload_bytes=" + std::to_string(logical_payload_bytes));
     append_note(notes, "estimated_global_total_bytes=" + std::to_string(estimated_global_total_bytes));
     append_note(notes, "gbps_mode=estimated_global_bytes");
+    append_note(notes, "gbps_basis=estimated_source_level_storage_buffer_bytes");
+    append_note(notes, "traffic_model=source_storage_buffer_operations_not_physical_dram");
+    append_note(notes, "atomic_rmw_model_bytes=8");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
     }
@@ -616,6 +621,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, mode, distribution, entity_count, prepared, logical_payload_bytes,
                           estimated_global_total_bytes, correctness_pass, dispatch_ok);
 

@@ -525,6 +525,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& resources, 
         vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -662,6 +663,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         output.all_points_correct = output.all_points_correct && correctness_pass;
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, strategy_kind, distribution_kind, config, entity_count, prepared_case.stats,
                           correctness_pass, dispatch_ok);
 

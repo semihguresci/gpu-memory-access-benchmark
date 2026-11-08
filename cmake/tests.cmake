@@ -64,10 +64,12 @@ function(configure_gpu_memory_layout_tests)
         tests/unit/app_options_tests.cpp
         tests/unit/benchmark_runner_tests.cpp
         tests/unit/experiment_metrics_tests.cpp
+        tests/unit/float_validation_tests.cpp
         tests/unit/json_exporter_tests.cpp
         tests/unit/scratch_buffer_budget_tests.cpp
         tests/unit/scalar_type_width_utils_tests.cpp
         tests/unit/vulkan_compute_utils_tests.cpp
+        tests/unit/gpu_timestamp_timer_tests.cpp
     )
 
     set(unit_app_sources
@@ -76,6 +78,7 @@ function(configure_gpu_memory_layout_tests)
         src/utils/json_exporter.cpp
         src/utils/scalar_type_width_utils.cpp
         src/utils/vulkan_compute_utils.cpp
+        src/utils/gpu_timestamp_timer.cpp
     )
 
     gpu_memory_layout_add_gtest_target(
@@ -90,11 +93,16 @@ function(configure_gpu_memory_layout_tests)
     if(ENABLE_GPU_INTEGRATION_TESTS)
         set(integration_test_sources
             tests/integration/experiment_smoke_tests.cpp
+            tests/integration/output_freshness_tests.cpp
             tests/integration/vulkan_context_integration_tests.cpp
         )
         set(integration_app_sources
             src/vulkan_context.cpp
             src/utils/gpu_timestamp_timer.cpp
+            src/utils/vulkan_compute_utils.cpp
+            src/utils/buffer_utils.cpp
+            src/benchmark_runner.cpp
+            src/experiments/occupancy_modeling_experiment.cpp
         )
 
         gpu_memory_layout_add_gtest_target(
@@ -108,6 +116,7 @@ function(configure_gpu_memory_layout_tests)
             PRIVATE
                 GPU_MEMORY_LAYOUT_EXPERIMENTS_BINARY_DIR="$<TARGET_FILE_DIR:gpu_memory_layout_experiments>"
                 GPU_MEMORY_LAYOUT_EXPERIMENTS_BINARY_NAME="$<TARGET_FILE_NAME:gpu_memory_layout_experiments>"
+                PROJECT_SHADER_BINARY_DIR="${SHADER_BINARY_DIR_NORMALIZED}"
         )
 
         add_dependencies(gpu_memory_layout_integration_tests gpu_memory_layout_experiments)

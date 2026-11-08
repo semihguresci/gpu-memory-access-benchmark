@@ -3,7 +3,7 @@
 ## 1. Lecture Focus
 - Concept: Temporal stability and ordering reuse effects.
 - Why this matters: Real-time systems benefit from stable data ordering and temporal locality.
-- Central question: How much does stable ordering reduce rebuild and traversal/list-processing cost over time?
+- Central question: How do deterministic source remappings affect an eight-frame read/transform/write sequence?
 
 ## 2. Learning Objectives
 By the end of this investigation, you should be able to:
@@ -21,17 +21,22 @@ By the end of this investigation, you should be able to:
 ## 4. Hypothesis
 Stable ordering improves locality and reduces variance across neighboring frames.
 
+The current proxy compares coherent shifts, block-local rotations and hashed remaps. These also change spatial locality and source collisions, so timing cannot isolate temporal locality or establish a rebuild/traversal effect.
+
 ## 5. Experimental Design
 ### Independent variables
-Stable vs shuffled ordering, cluster rebuild policy, camera motion patterns.
+Source-index remapping mode and logical source size.
 
 ### Controlled variables
 - Fixed benchmark harness and timing method (GPU timestamp queries).
 - Fixed data generation seeds per scenario where reproducibility is needed.
 - Fixed correctness oracle per variant.
+- Eight frames each execute one source load, the same integer transform and one output store per logical element. Seven compute barriers order the frame sequence.
+- Preserve all eight disjoint frame outputs and validate every value against the CPU oracle after each timed iteration. Initialize outputs to the complement of their expected values to expose missed writes.
+- Budget one source span plus eight output spans within total CLI scratch; distinguish buffer payload, allocation padding and active spans in row notes.
 
 ### Metrics
-Frame time variance, rebuild overhead, locality benefit metrics.
+Sequence GPU time, processed frame-elements/s and shader payload GB/s (`N * 8 * 8` bytes). Requested bytes do not establish DRAM traffic. Host output initialization and full validation are outside GPU timing.
 
 ## 6. Implementation Plan
 1. Implement minimally correct baseline variant first.

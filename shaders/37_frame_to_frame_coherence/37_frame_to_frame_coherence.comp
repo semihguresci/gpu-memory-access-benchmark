@@ -13,8 +13,8 @@ layout(std430, binding = 0) readonly buffer SourceBuffer {
     uint values[];
 } source_buffer;
 
-// Contract: one deterministic result per current-frame invocation so runs can
-// compare how temporal remapping changes memory behavior without changing work.
+// Contract: eight disjoint frame ranges preserve every measured invocation for
+// full readback validation. A frame owns [frame*N, (frame+1)*N).
 layout(std430, binding = 1) buffer OutputBuffer {
     uint values[];
 } output_buffer;
@@ -72,5 +72,5 @@ void main() {
     state *= 0x846ca68bu;
     state ^= state >> 16u;
 
-    output_buffer.values[index_value] = state;
+    output_buffer.values[push_constants.frame_index * push_constants.element_count + index_value] = state;
 }

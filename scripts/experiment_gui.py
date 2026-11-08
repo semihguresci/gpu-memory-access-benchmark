@@ -392,7 +392,7 @@ class ExperimentRunnerGui:
         if self.worker_thread and self.worker_thread.is_alive():
             messagebox.showerror("Busy", "Another action is already running.")
             return
-        if not self._validate_run_settings():
+        if action in ("run", "run_and_artifacts") and not self._validate_run_settings():
             return
 
         selected_ids = self._selected_experiment_ids()
@@ -439,12 +439,14 @@ class ExperimentRunnerGui:
 
     def _run_experiment_worker(self, action: str, selected_ids: list[str]) -> None:
         current_experiment_id = ""
-        try:
-            binary = resolve_binary(self.binary_var.get().strip() or None)
-            self.event_queue.put(("binary", str(binary)))
-        except FileNotFoundError as exc:
-            self.event_queue.put(("finished", False, str(exc)))
-            return
+        binary = None
+        if action in ("run", "run_and_artifacts"):
+            try:
+                binary = resolve_binary(self.binary_var.get().strip() or None)
+                self.event_queue.put(("binary", str(binary)))
+            except FileNotFoundError as exc:
+                self.event_queue.put(("finished", False, str(exc)))
+                return
 
         try:
             total = len(selected_ids)

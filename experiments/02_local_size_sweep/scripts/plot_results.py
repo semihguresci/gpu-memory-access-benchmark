@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    format_problem_size,
+    validate_analysis_provenance,
+    validated_rows,
+    write_plot_provenance,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 INPUT_JSON = ROOT / "results" / "tables" / "benchmark_results.json"
@@ -33,7 +43,7 @@ def _plot_local_size_sweep_summary() -> bool:
         return False
 
     payload = json.loads(INPUT_JSON.read_text(encoding="utf-8"))
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, "02_local_size_sweep", INPUT_JSON)
     if not rows:
         return False
 
@@ -75,7 +85,7 @@ def _plot_local_size_sweep_summary() -> bool:
 
         for (dispatch_count, problem_size), curve in subset.groupby(["dispatch_count", "problem_size"], sort=True):
             curve = curve.sort_values("local_size_x")
-            label = f"d={int(dispatch_count)}, size=2^{int(round(np.log2(problem_size)))}"
+            label = f"d={int(dispatch_count)}, size={format_problem_size(problem_size)}"
             axes[row_idx, 0].plot(curve["local_size_x"], curve["gpu_ms_median"], marker="o", label=label)
             axes[row_idx, 1].plot(
                 curve["local_size_x"],
@@ -110,11 +120,13 @@ def _plot_local_size_sweep_summary() -> bool:
 
 
 def main() -> None:
+    validate_analysis_provenance(INPUT_JSON.parent, "02_local_size_sweep", required_source=INPUT_JSON)
     if not _plot_local_size_sweep_summary():
         raise FileNotFoundError(
             "No Experiment 02 rows found in benchmark_results.json. "
             "Run the benchmark first with --experiment 02_local_size_sweep."
         )
+    write_plot_provenance(INPUT_JSON.parent, "02_local_size_sweep", [OUTPUT_PNG], plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

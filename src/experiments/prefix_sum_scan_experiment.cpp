@@ -610,10 +610,21 @@ void record_compute_write_to_compute_read_barrier(VkCommandBuffer command_buffer
                          1U, &barrier, 0U, nullptr, 0U, nullptr);
 }
 
+uint64_t estimate_storage_buffer_request_bytes(uint32_t logical_count, uint32_t block_count) {
+    const uint64_t elements = logical_count;
+    const uint64_t blocks = block_count;
+    // Count source-level storage-buffer requests for all three timed dispatches.
+    // The carry is loaded once per invocation, even by inactive tail lanes.
+    // Compiler broadcast, caches, and physical DRAM transactions are unmeasured.
+    const uint64_t main_scan_bytes = ((2U * elements) + blocks) * sizeof(uint32_t);
+    const uint64_t block_scan_bytes = ((2U * blocks) + kBlockScanScratchElements) * sizeof(uint32_t);
+    const uint64_t apply_bytes = ((2U * elements) + ((blocks - 1U) * kWorkgroupSize)) * sizeof(uint32_t);
+    return main_scan_bytes + block_scan_bytes + apply_bytes;
+}
+
 double compute_effective_gbps(uint32_t logical_count, uint32_t block_count, double dispatch_ms) {
-    const uint64_t total_bytes =
-        (static_cast<uint64_t>(logical_count) * 16U) + (static_cast<uint64_t>(block_count) * 16U);
-    return compute_effective_gbps_from_bytes(total_bytes, dispatch_ms);
+    return compute_effective_gbps_from_bytes(estimate_storage_buffer_request_bytes(logical_count, block_count),
+                                             dispatch_ms);
 }
 
 void append_case_notes(std::string& notes, uint32_t items_per_thread, uint32_t logical_count, uint32_t block_elements,
@@ -630,6 +641,11 @@ void append_case_notes(std::string& notes, uint32_t items_per_thread, uint32_t l
     append_note(notes, "logical_elements=" + std::to_string(logical_count));
     append_note(notes, "dispatch_count=" + std::to_string(kDispatchCount));
     append_note(notes, "throughput_scope=logical_scan_results");
+    append_note(notes, "gbps_basis=estimated_source_level_storage_buffer_bytes");
+    append_note(notes, "traffic_model=source_storage_buffer_operations_not_physical_dram");
+    append_note(notes, "estimated_traffic_formula=16N_plus_1036B_minus_1020");
+    append_note(notes, "estimated_global_total_bytes=" +
+                           std::to_string(estimate_storage_buffer_request_bytes(logical_count, block_count)));
     append_note(notes, "block_buffer_elements=" + std::to_string(max_block_count));
     append_note(notes, "validation_mode=exact_uint32_wrapping");
     append_note(notes, "input_pattern=deterministic_affine_mod251");
@@ -727,6 +743,7 @@ bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const Bu
             vkCmdPushConstants(command_buffer, apply_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                                static_cast<uint32_t>(sizeof(main_push_constants)), &main_push_constants);
             vkCmdDispatch(command_buffer, block_count, 1U, 1U);
+            VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
         });
 
         const bool dispatch_ok = std::isfinite(dispatch_ms);
@@ -777,6 +794,7 @@ bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const Bu
             vkCmdPushConstants(command_buffer, apply_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                                static_cast<uint32_t>(sizeof(main_push_constants)), &main_push_constants);
             vkCmdDispatch(command_buffer, block_count, 1U, 1U);
+            VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
         });
 
         const auto end = std::chrono::high_resolution_clock::now();
@@ -791,6 +809,7 @@ bool run_variant(VulkanContext& context, const BenchmarkRunner& runner, const Bu
         output.all_points_correct = output.all_points_correct && correctness_pass;
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         append_case_notes(notes, items_per_thread, logical_count, block_elements, block_count,
                           block_scan_items_per_thread, max_block_count, correctness_pass, dispatch_ok);
 

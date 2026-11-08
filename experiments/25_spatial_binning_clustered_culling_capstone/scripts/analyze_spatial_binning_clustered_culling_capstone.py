@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    latest_compatible_run,
+    select_compatible_runs,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "25_spatial_binning_clustered_culling_capstone"
 
@@ -44,9 +54,7 @@ def _parse_notes_field(notes: str) -> dict[str, str]:
 
 def _latest_run_path(runs_dir: Path) -> Path | None:
     candidates = sorted(path for path in runs_dir.rglob("*.json") if path.is_file()) if runs_dir.exists() else []
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+    return latest_compatible_run(candidates)
 
 
 def _load_payload(input_path: Path) -> dict:
@@ -55,7 +63,7 @@ def _load_payload(input_path: Path) -> dict:
 
 def _load_frame(input_path: Path) -> tuple[pd.DataFrame, dict]:
     payload = _load_payload(input_path)
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, EXPERIMENT_ID, input_path)
     if not isinstance(rows, list) or not rows:
         raise ValueError("Input benchmark JSON has no rows[] payload.")
 
@@ -275,12 +283,15 @@ def _build_stability(summary: pd.DataFrame) -> pd.DataFrame:
     return stability.sort_values(["distribution", "strategy"]).reset_index(drop=True)
 
 
-def _write_table(frame: pd.DataFrame, output_path: Path) -> None:
+def _write_table(frame: pd.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output_path, index=False, float_format="%.6f")
+    return output_path
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description="Analyze Experiment 25 spatial binning capstone data.")
     parser.add_argument("--skip-current", action="store_true")
     args = parser.parse_args()
@@ -292,9 +303,10 @@ def main() -> None:
     stability = _build_stability(summary)
 
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
-    _write_table(summary, TABLES_DIR / "spatial_binning_clustered_culling_capstone_summary.csv")
-    _write_table(relative, TABLES_DIR / "spatial_binning_clustered_culling_capstone_relative.csv")
-    _write_table(stability, TABLES_DIR / "spatial_binning_clustered_culling_capstone_stability.csv")
+    generated_tables.append(_write_table(summary, TABLES_DIR / "spatial_binning_clustered_culling_capstone_summary.csv"))
+    generated_tables.append(_write_table(relative, TABLES_DIR / "spatial_binning_clustered_culling_capstone_relative.csv"))
+    generated_tables.append(_write_table(stability, TABLES_DIR / "spatial_binning_clustered_culling_capstone_stability.csv"))
+    write_analysis_provenance(TABLES_DIR, [source_path], EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
 
     rows = int(frame.shape[0])
     variants = int(summary.shape[0])

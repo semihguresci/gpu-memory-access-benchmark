@@ -6,6 +6,49 @@
 
 namespace VulkanComputeUtils {
 
+bool validate_compute_requirements(const VkPhysicalDeviceLimits& limits, const std::array<uint32_t, 3>& local_size,
+                                   uint32_t shared_memory_bytes, std::string& error) {
+    error.clear();
+    uint32_t invocations = 1U;
+    for (std::size_t axis = 0U; axis < local_size.size(); ++axis) {
+        if (local_size[axis] == 0U || local_size[axis] > limits.maxComputeWorkGroupSize[axis]) {
+            error = "workgroup axis " + std::to_string(axis) + " requires " + std::to_string(local_size[axis]) +
+                    " invocations; device limit is " + std::to_string(limits.maxComputeWorkGroupSize[axis]);
+            return false;
+        }
+        if (local_size[axis] > limits.maxComputeWorkGroupInvocations / invocations) {
+            error = "workgroup exceeds maxComputeWorkGroupInvocations=" +
+                    std::to_string(limits.maxComputeWorkGroupInvocations);
+            return false;
+        }
+        invocations *= local_size[axis];
+    }
+    if (shared_memory_bytes > limits.maxComputeSharedMemorySize) {
+        error = "workgroup requires " + std::to_string(shared_memory_bytes) +
+                " shared bytes; maxComputeSharedMemorySize=" + std::to_string(limits.maxComputeSharedMemorySize);
+        return false;
+    }
+    return true;
+}
+
+bool validate_storage_buffer_descriptor_requirements(const VkPhysicalDeviceLimits& limits, uint32_t descriptor_count,
+                                                     std::string& error) {
+    error.clear();
+    if (descriptor_count > limits.maxPerStageDescriptorStorageBuffers) {
+        error = "compute stage requires " + std::to_string(descriptor_count) +
+                " storage-buffer descriptors; maxPerStageDescriptorStorageBuffers=" +
+                std::to_string(limits.maxPerStageDescriptorStorageBuffers);
+        return false;
+    }
+    if (descriptor_count > limits.maxDescriptorSetStorageBuffers) {
+        error = "descriptor set requires " + std::to_string(descriptor_count) +
+                " storage-buffer descriptors; maxDescriptorSetStorageBuffers=" +
+                std::to_string(limits.maxDescriptorSetStorageBuffers);
+        return false;
+    }
+    return true;
+}
+
 bool read_binary_file(const std::string& path, std::vector<char>& out_data) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
@@ -179,7 +222,7 @@ uint32_t compute_group_count_1d(uint32_t element_count, uint32_t local_size_x) {
         return 0U;
     }
 
-    return (element_count + local_size_x - 1U) / local_size_x;
+    return (element_count / local_size_x) + ((element_count % local_size_x) != 0U ? 1U : 0U);
 }
 
 void record_transfer_write_to_compute_read_write_barrier(VkCommandBuffer command_buffer, VkBuffer buffer,
@@ -212,6 +255,43 @@ void record_compute_write_to_transfer_read_barrier(VkCommandBuffer command_buffe
 
     vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U,
                          nullptr, 1U, &barrier, 0U, nullptr);
+}
+
+void record_compute_write_to_host_read_barrier(VkCommandBuffer command_buffer) {
+    const VkMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                  .pNext = nullptr,
+                                  .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                  .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 1U,
+                         &barrier, 0U, nullptr, 0U, nullptr);
+}
+
+void record_compute_write_to_host_read_barrier(VkCommandBuffer command_buffer, VkBuffer buffer, VkDeviceSize size) {
+    const VkBufferMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                                        .pNext = nullptr,
+                                        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+                                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                        .buffer = buffer,
+                                        .offset = 0U,
+                                        .size = size};
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U,
+                         nullptr, 1U, &barrier, 0U, nullptr);
+}
+
+void record_transfer_write_to_host_read_barrier(VkCommandBuffer command_buffer, VkBuffer buffer, VkDeviceSize size) {
+    const VkBufferMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                                        .pNext = nullptr,
+                                        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+                                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                        .buffer = buffer,
+                                        .offset = 0U,
+                                        .size = size};
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, nullptr,
+                         1U, &barrier, 0U, nullptr);
 }
 
 } // namespace VulkanComputeUtils

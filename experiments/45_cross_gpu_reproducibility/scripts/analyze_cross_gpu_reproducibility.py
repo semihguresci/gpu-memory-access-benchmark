@@ -5,9 +5,19 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    latest_compatible_run,
+    select_compatible_runs,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "45_cross_gpu_reproducibility"
 
@@ -20,7 +30,7 @@ CURRENT_JSON = TABLES_DIR / "benchmark_results.json"
 
 def _latest_run_path() -> Path | None:
     candidates = sorted(path for path in RUNS_DIR.rglob("*.json") if path.is_file()) if RUNS_DIR.exists() else []
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name)) if candidates else None
+    return latest_compatible_run(candidates)
 
 
 def _extract_checksum(notes: str) -> int | None:
@@ -32,7 +42,7 @@ def _extract_checksum(notes: str) -> int | None:
 
 def _load_frame(path: Path) -> tuple[pd.DataFrame, dict]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    frame = pd.DataFrame(payload.get("rows", []))
+    frame = pd.DataFrame(validated_rows(payload, EXPERIMENT_ID, path))
     if frame.empty:
         raise ValueError("Input benchmark JSON has no rows[].")
     frame = frame[frame["experiment_id"] == EXPERIMENT_ID].copy()
@@ -141,12 +151,15 @@ def _build_stability(summary: pd.DataFrame) -> pd.DataFrame:
     return stability
 
 
-def _write_table(frame: pd.DataFrame, name: str) -> None:
+def _write_table(frame: pd.DataFrame, name: str) -> Path:
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     frame.to_csv(TABLES_DIR / name, index=False, float_format="%.6f")
+    return TABLES_DIR / name
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description=f"Analyze {EXPERIMENT_ID} data.")
     parser.add_argument("--skip-current", action="store_true")
     args = parser.parse_args()
@@ -157,11 +170,12 @@ def main() -> None:
     checksums = _build_checksums(frame)
     signature = _build_signature(relative)
     stability = _build_stability(summary)
-    _write_table(summary, "cross_gpu_reproducibility_summary.csv")
-    _write_table(relative, "cross_gpu_reproducibility_relative.csv")
-    _write_table(checksums, "cross_gpu_reproducibility_checksums.csv")
-    _write_table(signature, "cross_gpu_reproducibility_signature.csv")
-    _write_table(stability, "cross_gpu_reproducibility_stability.csv")
+    generated_tables.append(_write_table(summary, "cross_gpu_reproducibility_summary.csv"))
+    generated_tables.append(_write_table(relative, "cross_gpu_reproducibility_relative.csv"))
+    generated_tables.append(_write_table(checksums, "cross_gpu_reproducibility_checksums.csv"))
+    generated_tables.append(_write_table(signature, "cross_gpu_reproducibility_signature.csv"))
+    generated_tables.append(_write_table(stability, "cross_gpu_reproducibility_stability.csv"))
+    write_analysis_provenance(TABLES_DIR, [source_path], EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
     print(
         f"[ok] Wrote {EXPERIMENT_ID} analysis tables from {source_path.name} on "
         f"{metadata.get('gpu_name', 'unknown_gpu')}."

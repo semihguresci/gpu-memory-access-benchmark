@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    latest_compatible_run,
+    select_compatible_runs,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "33_two_dimensional_locality_transpose_study"
 
@@ -29,12 +39,12 @@ def _parse_notes(notes: str) -> dict[str, str]:
 
 def _latest_run_path() -> Path | None:
     candidates = sorted(path for path in RUNS_DIR.rglob("*.json") if path.is_file()) if RUNS_DIR.exists() else []
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name)) if candidates else None
+    return latest_compatible_run(candidates)
 
 
 def _load_frame(path: Path) -> tuple[pd.DataFrame, dict]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    frame = pd.DataFrame(payload.get("rows", []))
+    frame = pd.DataFrame(validated_rows(payload, EXPERIMENT_ID, path))
     if frame.empty:
         raise ValueError("Input benchmark JSON has no rows[].")
     frame = frame[frame["experiment_id"] == EXPERIMENT_ID].copy()
@@ -108,12 +118,15 @@ def _build_stability(summary: pd.DataFrame) -> pd.DataFrame:
     return stability
 
 
-def _write_table(frame: pd.DataFrame, name: str) -> None:
+def _write_table(frame: pd.DataFrame, name: str) -> Path:
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     frame.to_csv(TABLES_DIR / name, index=False, float_format="%.6f")
+    return TABLES_DIR / name
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description="Analyze Experiment 33 2D locality and transpose data.")
     parser.add_argument("--skip-current", action="store_true")
     args = parser.parse_args()
@@ -122,9 +135,10 @@ def main() -> None:
     summary = _build_summary(frame)
     relative = _build_relative(summary)
     stability = _build_stability(summary)
-    _write_table(summary, "two_dimensional_locality_transpose_study_summary.csv")
-    _write_table(relative, "two_dimensional_locality_transpose_study_relative.csv")
-    _write_table(stability, "two_dimensional_locality_transpose_study_stability.csv")
+    generated_tables.append(_write_table(summary, "two_dimensional_locality_transpose_study_summary.csv"))
+    generated_tables.append(_write_table(relative, "two_dimensional_locality_transpose_study_relative.csv"))
+    generated_tables.append(_write_table(stability, "two_dimensional_locality_transpose_study_stability.csv"))
+    write_analysis_provenance(TABLES_DIR, [source_path], EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
     print(
         f"[ok] Wrote Experiment 33 analysis tables from {source_path.name} on "
         f"{metadata.get('gpu_name', 'unknown_gpu')}."

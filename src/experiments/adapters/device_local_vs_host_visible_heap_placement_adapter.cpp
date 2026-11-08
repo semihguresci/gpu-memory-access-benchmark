@@ -15,7 +15,7 @@ bool run_device_local_vs_host_visible_heap_placement_experiment_adapter(VulkanCo
             context, runner,
             DeviceLocalVsHostVisibleHeapPlacementExperimentConfig{
                 .max_buffer_bytes = static_cast<std::size_t>(
-                    ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 4U)),
+                    ScratchBufferBudget::compute_per_buffer_budget(options.scratch_size_bytes, 6U)),
                 .scratch_size_bytes = options.scratch_size_bytes,
                 .shader_path = "",
                 .verbose_progress = options.verbose_progress,

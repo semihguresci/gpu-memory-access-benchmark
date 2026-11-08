@@ -3,6 +3,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <regex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -18,6 +20,15 @@ nlohmann::json load_json(const std::filesystem::path& path) {
 }
 
 } // namespace
+
+TEST(JsonExporterTests, RejectsDirectoryAsOutputInsteadOfReportingSuccess) {
+    TestSupport::ScopedTempDirectory temp_dir;
+    const std::filesystem::path output_path = temp_dir.path() / "output.json";
+    std::filesystem::create_directory(output_path);
+
+    EXPECT_THROW(JsonExporter::write_benchmark_results({}, output_path.string()), std::runtime_error);
+    EXPECT_TRUE(std::filesystem::is_directory(output_path));
+}
 
 TEST(JsonExporterTests, WritesSummaryOnlySchemaAndMetadata) {
     TestSupport::ScopedTempDirectory temp_dir;
@@ -46,6 +57,8 @@ TEST(JsonExporterTests, WritesSummaryOnlySchemaAndMetadata) {
     EXPECT_EQ(root["metadata"]["result_count"], 1);
     EXPECT_EQ(root["metadata"]["row_count"], 0);
     EXPECT_TRUE(root["metadata"]["exported_at_utc"].is_string());
+    EXPECT_TRUE(std::regex_match(root["metadata"]["exported_at_utc"].get<std::string>(),
+                                 std::regex(R"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)")));
 
     ASSERT_TRUE(root.contains("results"));
     ASSERT_EQ(root["results"].size(), 1U);

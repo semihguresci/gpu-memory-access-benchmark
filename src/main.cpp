@@ -2,6 +2,7 @@
 #include "experiments/experiment_registry.hpp"
 #include "utils/app_options.hpp"
 #include "utils/json_exporter.hpp"
+#include "utils/vulkan_compute_utils.hpp"
 #include "vulkan_context.hpp"
 
 #include <exception>
@@ -29,7 +30,7 @@ int main(int argc, char** argv) noexcept {
         const AppOptions options = ArgumentParser::parse(argc, argv, available_experiment_ids);
 
         VulkanContext context;
-        if (!context.initialize(options.enable_validation)) {
+        if (!context.initialize(options.enable_validation, options.device_selection)) {
             std::cerr << "Vulkan initialization failed.\n";
             return 1;
         }
@@ -47,6 +48,8 @@ int main(int argc, char** argv) noexcept {
             {.warmup_iterations = options.warmup_iterations, .timed_iterations = options.timed_iterations});
         std::vector<BenchmarkResult> results;
         std::vector<BenchmarkMeasurementRow> rows;
+        VkPhysicalDeviceProperties device_properties{};
+        vkGetPhysicalDeviceProperties(context.physical_device(), &device_properties);
 
         for (const std::string& experiment_id : options.selected_experiment_ids) {
             const ExperimentDescriptor* descriptor = find_experiment_descriptor(experiment_id);
@@ -69,6 +72,13 @@ int main(int argc, char** argv) noexcept {
             }
 
             ExperimentRunOutput run_output{};
+            std::string support_error;
+            if (!VulkanComputeUtils::validate_compute_requirements(
+                    device_properties.limits, descriptor->required_local_size, descriptor->required_shared_memory_bytes,
+                    support_error)) {
+                std::cerr << "Experiment unsupported: " << descriptor->id << " (" << support_error << ").\n";
+                return 1;
+            }
             const bool run_ok = descriptor->run(context, runner, options, run_output);
             if (!run_ok || !run_output.success) {
                 std::cerr << "Experiment failed: " << descriptor->id;
@@ -88,10 +98,13 @@ int main(int argc, char** argv) noexcept {
             .gpu_name = context.selected_device_name(),
             .vulkan_api_version = format_vulkan_version(context.selected_device_api_version()),
             .driver_version = std::to_string(context.selected_device_driver_version()),
+            .gpu_device_uuid = context.selected_device_uuid_hex(),
             .validation_enabled = options.enable_validation,
             .gpu_timestamps_supported = context.gpu_timestamps_supported(),
             .warmup_iterations = options.warmup_iterations,
             .timed_iterations = options.timed_iterations,
+            .command_line = std::vector<std::string>(argv, argv + argc),
+            .shader_binary_directory = PROJECT_SHADER_BINARY_DIR,
         };
 
         context.shutdown();

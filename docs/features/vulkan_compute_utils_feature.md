@@ -12,6 +12,7 @@ Offers low-level reusable helpers for compute pipeline setup, SPIR-V loading, de
 - Resolves shader paths across common build/runtime directories.
 
 ## Descriptor and Pipeline Helpers
+- Validate per-stage and descriptor-set storage-buffer descriptor limits before resource creation.
 - Create descriptor set layouts.
 - Create descriptor pools.
 - Allocate descriptor sets.
@@ -25,6 +26,10 @@ Offers low-level reusable helpers for compute pipeline setup, SPIR-V loading, de
 ## Synchronization Utilities
 - Transfer write -> compute read/write barrier.
 - Compute write -> transfer read barrier.
+- Compute write -> host read barriers for one buffer or all shader-written memory.
+- Transfer write -> host read barrier for a staging-buffer range.
+
+Host-read barriers establish memory visibility; callers still wait for GPU completion before accessing mapped output. Direct-output experiments include the visibility dependency in their GPU interval and export its timing scope. Staged paths include it in readback instead.
 
 ## Design Notes
 - Functions are intentionally explicit wrappers over Vulkan calls.

@@ -26,7 +26,7 @@ constexpr const char* kExperimentId = "18_register_pressure_proxy";
 constexpr uint32_t kWorkgroupSize = 256U;
 constexpr uint32_t kDispatchCount = 1U;
 constexpr uint32_t kRounds = 8U;
-constexpr uint32_t kMaxTempCount = 32U;
+constexpr uint32_t kChainCount = 32U;
 constexpr uint32_t kSourceMultiplier = 0x9E3779B9U;
 constexpr uint32_t kSourceOffset = 0x6D2B79F5U;
 constexpr uint32_t kIndexMultiplier = 0x85EBCA6BU;
@@ -122,40 +122,31 @@ bool validate_destination_values(const uint32_t* values, const std::vector<uint3
     return true;
 }
 
-uint32_t transform_value(uint32_t seed, uint32_t index, uint32_t temp_count) {
-    std::array<uint32_t, kMaxTempCount> state{};
-    for (uint32_t lane = 0U; lane < temp_count; ++lane) {
+uint32_t transform_value(uint32_t seed, uint32_t index) {
+    uint32_t result =
+        seed ^ (index * kResultIndexMultiplier) ^ (kChainCount * kIndexMultiplier) ^ (kRounds * kSourceMultiplier);
+    // The oracle evaluates each independent chain immediately. GPU variants only
+    // change how many chains remain live together, never their operations or order.
+    for (uint32_t lane = 0U; lane < kChainCount; ++lane) {
         uint32_t lane_seed = seed ^ ((lane + 1U) * kLaneMultiplier);
         lane_seed += index * kIndexMultiplier;
         lane_seed ^= rotate_left(seed + ((lane + 1U) * kLaneMultiplier), (lane * 5U + 1U) & 31U);
-        state[lane] = lane_seed;
-    }
-
-    for (uint32_t round = 0U; round < kRounds; ++round) {
-        for (uint32_t lane = 0U; lane < temp_count; ++lane) {
-            const uint32_t left = state[(lane + temp_count - 1U) % temp_count];
-            const uint32_t right = state[(lane + 1U) % temp_count];
-            const uint32_t current = state[lane];
+        uint32_t state = lane_seed;
+        for (uint32_t round = 0U; round < kRounds; ++round) {
             const uint32_t mixed = rotate_left(
-                current + (left ^ (round * kRoundMultiplier)) + ((lane + 1U) * kLaneMultiplier), (lane + round) & 31U);
-            state[lane] = (mixed ^ right) + kResultMixMultiplier + ((lane + 1U) * kResultXorMultiplier);
+                state + (seed ^ (round * kRoundMultiplier)) + ((lane + 1U) * kLaneMultiplier), (lane + round) & 31U);
+            state = (mixed ^ seed) + kResultMixMultiplier + ((lane + 1U) * kResultXorMultiplier);
         }
+        result ^= rotate_left(state + ((lane + 1U) * kResultMixMultiplier), (lane + kChainCount) & 31U);
+        result += state ^ ((lane + 1U) * kResultXorMultiplier);
     }
-
-    uint32_t result =
-        seed ^ (index * kResultIndexMultiplier) ^ (temp_count * kIndexMultiplier) ^ (kRounds * kSourceMultiplier);
-    for (uint32_t lane = 0U; lane < temp_count; ++lane) {
-        result ^= rotate_left(state[lane] + ((lane + 1U) * kResultMixMultiplier), (lane + temp_count) & 31U);
-        result += state[lane] ^ ((lane + 1U) * kResultXorMultiplier);
-    }
-
     return result;
 }
 
-std::vector<uint32_t> build_reference_values(const uint32_t* src_values, uint32_t element_count, uint32_t temp_count) {
+std::vector<uint32_t> build_reference_values(const uint32_t* src_values, uint32_t element_count) {
     std::vector<uint32_t> reference_values(element_count, 0U);
     for (uint32_t index = 0U; index < element_count; ++index) {
-        reference_values[index] = transform_value(src_values[index], index, temp_count);
+        reference_values[index] = transform_value(src_values[index], index);
     }
     return reference_values;
 }
@@ -361,6 +352,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& resources, 
         vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -368,6 +360,10 @@ void record_case_notes(std::string& notes, const VariantDescriptor& variant, uin
                        uint32_t group_count_x, VkDeviceSize span_bytes, bool correctness_pass, bool dispatch_ok) {
     append_note(notes, std::string("variant=") + variant.variant_name);
     append_note(notes, "temporary_count=" + std::to_string(variant.temp_count));
+    append_note(notes, "independent_chain_count=" + std::to_string(kChainCount));
+    append_note(notes, "state_updates_per_element=" + std::to_string(kChainCount * kRounds));
+    append_note(notes, "schedule=batched_independent_chains");
+    append_note(notes, "output_contract=identical_across_variants");
     append_note(notes, "round_count=" + std::to_string(kRounds));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "group_count_x=" + std::to_string(group_count_x));
@@ -377,6 +373,7 @@ void record_case_notes(std::string& notes, const VariantDescriptor& variant, uin
     append_note(notes, "destination_span_bytes=" + std::to_string(static_cast<unsigned long long>(span_bytes)));
     append_note(notes, "payload_bytes_per_element=" + std::to_string(sizeof(uint32_t) * 2U));
     append_note(notes, "register_pressure_proxy=true");
+    append_note(notes, "register_allocation_verified=false");
     append_note(notes, "validation_mode=exact_uint32");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
@@ -460,6 +457,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
                       << ", correctness=" << (correctness_pass ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant.variant_name,
@@ -568,10 +566,9 @@ run_register_pressure_proxy_experiment(VulkanContext& context, const BenchmarkRu
         }
     }
 
+    const std::vector<uint32_t> reference_values = build_reference_values(src_values, logical_count);
     for (std::size_t index = 0; index < kVariants.size(); ++index) {
         const VariantDescriptor& variant = kVariants[index];
-        const std::vector<uint32_t> reference_values =
-            build_reference_values(src_values, logical_count, variant.temp_count);
         if (!run_case(context, runner, buffers, pipeline_resources[index], variant, logical_count, reference_values,
                       output, verbose_progress)) {
             output.all_points_correct = false;

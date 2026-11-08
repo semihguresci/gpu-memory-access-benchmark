@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Plot only tables bound to validated raw measurements.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "24_stream_compaction"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -25,13 +37,15 @@ IMPLEMENTATION_STYLE = {
 def _load_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing input table: {path}")
+    validate_derived_table(path)
     frame = pd.read_csv(path)
+    validate_summary_table(frame, path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
     return frame
 
 
-def _plot_grouped_bars(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> None:
+def _plot_grouped_bars(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> Path | None:
     ratios = sorted(frame["valid_ratio_percent"].astype(int).unique().tolist())
     x_positions = list(range(len(ratios)))
     bar_width = 0.35
@@ -56,9 +70,10 @@ def _plot_grouped_bars(frame: pd.DataFrame, y_column: str, output_path: Path, ti
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_relative(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> None:
+def _plot_relative(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> Path | None:
     plot_frame = frame.sort_values(["valid_ratio_percent"])
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -74,43 +89,47 @@ def _plot_relative(frame: pd.DataFrame, y_column: str, output_path: Path, title:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, EXPERIMENT_ID)
     summary = _load_table(SUMMARY_CSV)
     relative = _load_table(RELATIVE_CSV)
     stability = _load_table(STABILITY_CSV)
 
-    _plot_grouped_bars(
+    generated_charts.append(_plot_grouped_bars(
         summary,
         "gpu_ms_median",
         CHARTS_DIR / "stream_compaction_median_gpu_ms.png",
         "Experiment 24: Median GPU Time by Valid Ratio",
         "GPU ms (median)",
-    )
-    _plot_grouped_bars(
+    ))
+    generated_charts.append(_plot_grouped_bars(
         summary,
         "gbps_median",
         CHARTS_DIR / "stream_compaction_effective_gbps.png",
         "Experiment 24: Effective GB/s by Valid Ratio",
         "Effective GB/s",
-    )
-    _plot_relative(
+    ))
+    generated_charts.append(_plot_relative(
         relative,
         "three_stage_speedup_vs_atomic",
         CHARTS_DIR / "stream_compaction_speedup_vs_atomic.png",
         "Experiment 24: three_stage Speedup vs global_atomic_append",
         "Speedup factor",
-    )
-    _plot_grouped_bars(
+    ))
+    generated_charts.append(_plot_grouped_bars(
         stability,
         "p95_to_median_gpu_ms",
         CHARTS_DIR / "stream_compaction_stability_ratio.png",
         "Experiment 24: GPU Time Stability by Valid Ratio",
         "p95 / median GPU ms",
-    )
+    ))
 
     print(f"[ok] Wrote Experiment 24 charts to {CHARTS_DIR.relative_to(ROOT)}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

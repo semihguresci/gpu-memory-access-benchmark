@@ -7,10 +7,8 @@
 
 namespace {
 
-uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
-    VkPhysicalDeviceMemoryProperties memory_properties{};
-    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
-
+uint32_t find_memory_type(const VkPhysicalDeviceMemoryProperties& memory_properties, uint32_t type_filter,
+                          VkMemoryPropertyFlags properties) {
     for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
         const bool matches_filter = (type_filter & (1U << i)) != 0U;
         const bool matches_properties = (memory_properties.memoryTypes[i].propertyFlags & properties) == properties;
@@ -27,6 +25,22 @@ uint32_t find_memory_type(VkPhysicalDevice physical_device, uint32_t type_filter
 
 bool create_buffer_resource(VkPhysicalDevice physical_device, VkDevice device, VkDeviceSize size,
                             VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, BufferResource& out_resource) {
+    if (size == 0U) {
+        std::cerr << "Cannot create an empty buffer.\n";
+        return false;
+    }
+    if ((usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) != 0U) {
+        VkPhysicalDeviceProperties device_properties{};
+        vkGetPhysicalDeviceProperties(physical_device, &device_properties);
+        // Current experiments bind the complete storage buffer as one descriptor.
+        if (size > device_properties.limits.maxStorageBufferRange) {
+            std::cerr << "Storage buffer requires " << size
+                      << " bytes, exceeding maxStorageBufferRange=" << device_properties.limits.maxStorageBufferRange
+                      << ". Reduce --size.\n";
+            return false;
+        }
+    }
+
     const VkBufferCreateInfo buffer_info{
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, size, usage, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr};
 
@@ -37,7 +51,9 @@ bool create_buffer_resource(VkPhysicalDevice physical_device, VkDevice device, V
     VkMemoryRequirements memory_requirements{};
     vkGetBufferMemoryRequirements(device, out_resource.buffer, &memory_requirements);
 
-    const uint32_t memory_type = find_memory_type(physical_device, memory_requirements.memoryTypeBits, properties);
+    VkPhysicalDeviceMemoryProperties memory_properties{};
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+    const uint32_t memory_type = find_memory_type(memory_properties, memory_requirements.memoryTypeBits, properties);
 
     if (memory_type == UINT32_MAX) {
         vkDestroyBuffer(device, out_resource.buffer, nullptr);
@@ -63,6 +79,10 @@ bool create_buffer_resource(VkPhysicalDevice physical_device, VkDevice device, V
     }
 
     out_resource.size = size;
+    out_resource.allocation_size = memory_requirements.size;
+    out_resource.memory_type_index = memory_type;
+    out_resource.heap_index = memory_properties.memoryTypes[memory_type].heapIndex;
+    out_resource.memory_properties = memory_properties.memoryTypes[memory_type].propertyFlags;
     return true;
 }
 
@@ -90,4 +110,8 @@ void destroy_buffer_resource(VkDevice device, BufferResource& resource) {
     }
 
     resource.size = 0;
+    resource.allocation_size = 0;
+    resource.memory_type_index = 0;
+    resource.heap_index = 0;
+    resource.memory_properties = 0;
 }

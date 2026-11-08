@@ -22,14 +22,14 @@ layout(push_constant) uniform PushConstants {
     uint element_count;
 } push_constants;
 
-shared uint subgroup_sums[32];
-shared uint reduction_values[32];
+// At most one subgroup per invocation, including subgroup sizes below eight.
+shared uint subgroup_sums[256];
 
 void main() {
     const uint global_index = gl_GlobalInvocationID.x;
     const uint local_index = gl_LocalInvocationID.x;
     const uint subgroup_index = gl_SubgroupID;
-    const uint subgroup_count = gl_WorkGroupSize.x / gl_SubgroupSize;
+    const uint subgroup_count = gl_NumSubgroups;
 
     const uint input_value = global_index < push_constants.element_count ? input_buffer.values[global_index] : 0u;
     const uint subgroup_sum = subgroupAdd(input_value);
@@ -38,15 +38,10 @@ void main() {
     }
     barrier();
 
-    if (local_index < subgroup_count) {
-        reduction_values[local_index] = subgroup_sums[local_index];
-    }
-    barrier();
-
     if (local_index == 0u) {
         uint total = 0u;
         for (uint subgroup_iter = 0u; subgroup_iter < subgroup_count; ++subgroup_iter) {
-            total += reduction_values[subgroup_iter];
+            total += subgroup_sums[subgroup_iter];
         }
         atomicAdd(output_buffer.value, total);
     }

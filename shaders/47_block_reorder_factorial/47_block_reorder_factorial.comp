@@ -1,0 +1,81 @@
+// Experiment 47: Block Reorder Factorial
+// Shader role: main access-pattern kernel.
+// What this experiment tests: a 2x2 factorial over (block visit order: sequential
+// vs shuffled) x (lane mapping inside each aligned block: ordered vs
+// bit-reversed) at constant bijective source coverage. Access mode and block
+// width are push constants, so all variants share one shader and pipeline.
+// Block widths are 2, 4, 8, 16, and 32 times the queried subgroup size. The
+// logical index follows subgroup/lane order, so reversal spans subgroups.
+// Reading tip: The CPU oracle in block_reorder_factorial_experiment.cpp must stay
+// in lockstep with the index rule and the transform function below.
+
+#version 450
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) readonly buffer SourceBuffer {
+    uint values[];
+} src_buffer;
+
+layout(set = 0, binding = 1) readonly buffer BlockPermutationBuffer {
+    uint indices[];
+} block_perm;
+
+layout(set = 0, binding = 2) writeonly buffer DestinationBuffer {
+    uint values[];
+} dst_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint block_width;   // power of two greater than subgroup size; divides element_count
+    uint within_mode;   // 0 = ordered lanes, 1 = bit-reversed lane mapping
+    uint block_bits;    // log2(block_width), shared by ordered and reversed paths
+} push_constants;
+
+shared uint subgroup_lane_counts[256];
+shared uint subgroup_offsets[256];
+
+// Must stay in lockstep with transform_value() on the CPU.
+uint transform_value(uint input_value, uint source_index) {
+    return (input_value ^ (source_index * 1664525u)) + 1013904223u;
+}
+
+void main() {
+    // Vulkan does not require local IDs to follow subgroup lane order or all
+    // lanes to be active. Compact actual membership before assigning inputs.
+    const uvec4 active_lanes = subgroupBallot(true);
+    const uint lane_rank = subgroupBallotExclusiveBitCount(active_lanes);
+    if (subgroupElect()) {
+        subgroup_lane_counts[gl_SubgroupID] = subgroupBallotBitCount(active_lanes);
+    }
+    barrier();
+    if (gl_LocalInvocationIndex == 0u) {
+        uint running_count = 0u;
+        for (uint subgroup = 0u; subgroup < gl_NumSubgroups; ++subgroup) {
+            subgroup_offsets[subgroup] = running_count;
+            running_count += subgroup_lane_counts[subgroup];
+        }
+    }
+    barrier();
+    const uint id = gl_WorkGroupID.x * gl_WorkGroupSize.x + subgroup_offsets[gl_SubgroupID] + lane_rank;
+    if (id >= push_constants.element_count) {
+        return;
+    }
+
+    const uint block_index = id / push_constants.block_width;
+    const uint lane_in_block = id - block_index * push_constants.block_width;
+
+    // The host stages an identity table for sequential order and a seeded
+    // permutation for shuffled order. Both paths request one index per lane.
+    const uint source_block = block_perm.indices[block_index];
+
+    const uint reversed_lane = bitfieldReverse(lane_in_block) >> (32u - push_constants.block_bits);
+    const uint reversed_mask = 0u - push_constants.within_mode;
+    const uint lane_out = (reversed_lane & reversed_mask) | (lane_in_block & ~reversed_mask);
+
+    const uint source_index = source_block * push_constants.block_width + lane_out;
+    dst_buffer.values[id] = transform_value(src_buffer.values[source_index], source_index);
+}

@@ -7,6 +7,7 @@
 
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_ballot : require
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
@@ -23,15 +24,36 @@ layout(push_constant) uniform PushConstants {
     uint items_per_thread;
 } push_constants;
 
-shared uint subgroup_totals[32];
-shared uint subgroup_offsets[32];
+shared uint subgroup_totals[256];
+shared uint subgroup_offsets[256];
 
 void main() {
     const uint local_index = gl_LocalInvocationID.x;
     const uint subgroup_index = gl_SubgroupID;
     const uint block_elements = gl_WorkGroupSize.x * push_constants.items_per_thread;
     const uint block_base = gl_WorkGroupID.x * block_elements;
-    const uint subgroup_count = gl_WorkGroupSize.x / gl_SubgroupSize;
+    const uint subgroup_count = gl_NumSubgroups;
+
+    // Vulkan does not relate local IDs to subgroup lane IDs. Construct dense
+    // logical positions in subgroup/lane order before reading the input. Count
+    // actual active lanes so partial subgroups and inactive lanes are safe.
+    const uvec4 active_lanes = subgroupBallot(true);
+    const uint lane_rank = subgroupBallotExclusiveBitCount(active_lanes);
+    if (subgroupElect()) {
+        subgroup_totals[subgroup_index] = subgroupBallotBitCount(active_lanes);
+    }
+    barrier();
+    if (local_index == 0u) {
+        uint running_count = 0u;
+        for (uint subgroup_iter = 0u; subgroup_iter < subgroup_count; ++subgroup_iter) {
+            subgroup_offsets[subgroup_iter] = running_count;
+            running_count += subgroup_totals[subgroup_iter];
+        }
+    }
+    barrier();
+    const uint logical_thread = subgroup_offsets[subgroup_index] + lane_rank;
+    // All offsets must be consumed before the arrays are reused for the scan.
+    barrier();
 
     uint local_values[8];
     for (uint item = 0u; item < 8u; ++item) {
@@ -39,7 +61,7 @@ void main() {
     }
 
     for (uint item = 0u; item < push_constants.items_per_thread; ++item) {
-        const uint element_index = block_base + (local_index * push_constants.items_per_thread) + item;
+        const uint element_index = block_base + (logical_thread * push_constants.items_per_thread) + item;
         const uint value = element_index < push_constants.logical_count ? input_buffer.values[element_index] : 0u;
         local_values[item] = value + (item > 0u ? local_values[item - 1u] : 0u);
     }
@@ -64,7 +86,7 @@ void main() {
 
     const uint thread_prefix = subgroup_offsets[subgroup_index] + thread_subgroup_prefix;
     for (uint item = 0u; item < push_constants.items_per_thread; ++item) {
-        const uint element_index = block_base + (local_index * push_constants.items_per_thread) + item;
+        const uint element_index = block_base + (logical_thread * push_constants.items_per_thread) + item;
         if (element_index < push_constants.logical_count) {
             output_buffer.values[element_index] = thread_prefix + local_values[item];
         }

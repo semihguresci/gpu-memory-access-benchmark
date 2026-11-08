@@ -1,35 +1,67 @@
 # Experiment 35 Results: Occupancy Modeling
 
-## Run Status
-- Benchmark status: latest `20260428_171131Z` collection completed (`60/60` row correctness pass across `12` benchmark cases)
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2`
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-28T17:11:31Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260428_171131Z.json)
-- Sweep coverage: `3` variants x `4` problem sizes (`655360` through `41943040` elements)
+## Run status and provenance
 
-## Key Measurements
-- All `12` benchmark cases are represented in the refreshed export.
-- `high_smem` recorded the lowest median GPU time at every tested size. At `element_count=10485760`, it measured `3.709216 ms` versus `3.911936 ms` for `low_smem` and `3.907616 ms` for `medium_smem`. Median GB/s: `22.615582`, `21.443623`, and `21.467329`.
-- The largest stability outlier in the current table is `high_smem` at `element_count=2621440`, where p95-to-median GPU time reached `1.603214` despite a median advantage of only about `0.53%` over `low_smem`.
+- Current export: **30/30 correctness checks passed**, 3 variants, 2 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `15eea600f8a815e083f831f43d5e80b7a9d4dfc479e9b3ade5f2f5143ad1cb6d`.
 
-## Artifact Links
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [occupancy modeling relative](./results/tables/occupancy_modeling_relative.csv)
-- [occupancy modeling stability](./results/tables/occupancy_modeling_stability.csv)
-- [occupancy modeling summary](./results/tables/occupancy_modeling_summary.csv)
-- [occupancy modeling gbps](./results/charts/occupancy_modeling_gbps.png)
-- [occupancy modeling gpu ms](./results/charts/occupancy_modeling_gpu_ms.png)
-- [occupancy modeling slowdown](./results/charts/occupancy_modeling_slowdown.png)
-- [occupancy modeling stability](./results/charts/occupancy_modeling_stability.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "35_occupancy_modeling", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\35_occupancy_modeling\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:45:07.870232Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `6` |
+| row_count | `30` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- On this GPU and with the current kernels, the higher shared-memory configuration produced the best medians across the tested sizes, but the win is modest rather than dramatic.
-- The stability table matters here: some of the median differences are only a few percent, and `high_smem` shows a noticeably worse tail at `2621440` elements.
+Exported configuration and metric definitions (all distinct values):
 
-## Limitations
-- Results come from one GPU and driver stack.
-- This report uses the experiment's current `high_smem`, `medium_smem`, and `low_smem` variants only; it does not isolate every occupancy-related factor independently.
-- Median and GB/s rankings should be interpreted alongside the stability table, especially where the median gaps are small.
+| Row-note field | Recorded values |
+|---|---|
+| gpu_time_scope | kernel_work_and_host_visibility_dependency |
+| oracle | reference_complement_before_every_dispatch |
+
+## Key measurements
+
+All cases share the reported **problem_size=2621440**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| high_smem | 1 | 2621440 | 5 | 0.934592 | 2804903102.102 | 22.439225 |
+| low_smem | 1 | 2621440 | 5 | 0.941632 | 2783932576.633 | 22.271461 |
+| medium_smem | 1 | 2621440 | 5 | 0.940992 | 2785826021.900 | 22.286608 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_114507Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_114507Z_remaining_review_fixes.json).
+- [occupancy_modeling_gbps.png](./results/charts/occupancy_modeling_gbps.png)
+- [occupancy_modeling_gpu_ms.png](./results/charts/occupancy_modeling_gpu_ms.png)
+- [occupancy_modeling_slowdown.png](./results/charts/occupancy_modeling_slowdown.png)
+- [occupancy_modeling_stability.png](./results/charts/occupancy_modeling_stability.png)
+- [occupancy_modeling_relative.csv](./results/tables/occupancy_modeling_relative.csv)
+- [occupancy_modeling_stability.csv](./results/tables/occupancy_modeling_stability.csv)
+- [occupancy_modeling_summary.csv](./results/tables/occupancy_modeling_summary.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- Declared shared memory is a proxy for allocation pressure; actual allocation, occupancy, and spills need compiler/profiler evidence.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

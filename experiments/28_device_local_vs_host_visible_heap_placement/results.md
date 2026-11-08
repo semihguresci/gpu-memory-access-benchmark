@@ -1,37 +1,104 @@
 # Experiment 28 Results: Device-Local vs Host-Visible Heap Placement
 
-## Run Status
-- Benchmark status: latest `20260429_182842Z` collection completed (`10/10` row correctness pass across `2` benchmark cases)
-- Test status: not run in this refresh
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --size 1G`
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-29T18:28:42Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260429_182842Z.json)
-- Sweep coverage: `2` variants x current configured problem size (`67108864` logical elements)
+## Run status and provenance
 
-## Key Measurements
-- All `2` benchmark cases are represented in the refreshed export.
-- On the exported full GPU path (`gpu_time_scope=full_gpu_path`), `host_visible_direct` was faster at `27.899424 ms` median versus `47.425344 ms` for `device_local_staged`. That is a `1.699868x` slowdown for the staged device-local path on the current GPU-path metric.
-- Median full GPU-path GB/s followed the same ranking: `19.243082` for `host_visible_direct` versus `11.320338` for `device_local_staged`, or `0.588281x` of the host-visible baseline.
-- The broader harness wall-clock metric was nearly identical in this run: `11796.678800 ms` for `host_visible_direct` versus `11793.941000 ms` for `device_local_staged`, a `0.999768x` ratio. That wall-clock scope includes CPU-side buffer filling and validation and is not the headline placement metric.
-- The staged device-local path carried explicit transfer costs in the median samples: `upload_ms=23.304224` and `readback_ms=22.733472`.
+- Current export: **50/50 correctness checks passed**, 10 variants, 1 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `da4c4ab32045286993f211976a2eabc49b9b4edefa14eb924fa2cd943a77864d`.
 
-## Artifact Links
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [heap placement summary](./results/tables/device_local_vs_host_visible_heap_placement_summary.csv)
-- [heap placement relative](./results/tables/device_local_vs_host_visible_heap_placement_relative.csv)
-- [heap placement stability](./results/tables/device_local_vs_host_visible_heap_placement_stability.csv)
-- [heap placement full gpu path ms](./results/charts/heap_placement_gpu_path_ms.png)
-- [heap placement harness wall-clock ms](./results/charts/heap_placement_harness_wall_clock_ms.png)
-- [heap placement full gpu path gbps](./results/charts/heap_placement_gpu_path_gbps.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "28_device_local_vs_host_visible_heap_placement", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\28_device_local_vs_host_visible_heap_placement\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:42:24.287451Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `10` |
+| row_count | `50` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- On this GPU and with the current implementation, host-visible direct placement wins on the experiment's exported full GPU-path metric.
-- The near-equal harness wall-clock times do not show that the placement difference disappears. That broader metric is dominated by CPU-side fill and validation work, so it should be treated as harness context rather than the primary placement comparison.
+Exported configuration and metric definitions (all distinct values):
 
-## Limitations
-- Results come from one GPU and driver stack.
-- The current sweep covers one configured problem size only, so it does not show where the placement tradeoff might change across smaller or larger working sets.
-- The exported `gpu_ms` and `gbps` values represent the experiment's full GPU path, while `end_to_end_ms` is a broader harness wall-clock measurement that includes CPU-side setup and oracle work.
+| Row-note field | Recorded values |
+|---|---|
+| active_buffer_count | 2, 4 |
+| active_payload_bytes | 11184128, 22368256 |
+| allocated_memory_bytes | 33552384 |
+| buffer_span_bytes | 5592064 |
+| device_destination_heap_index | 0 |
+| device_destination_memory_property_flags | 1 |
+| device_destination_memory_type_index | 1 |
+| device_source_heap_index | 0 |
+| device_source_memory_property_flags | 1 |
+| device_source_memory_type_index | 1 |
+| gbps_basis | useful_kernel_payload_over_gpu_path_time |
+| gpu_time_scope | dispatch_chain_timestamps, sum_of_upload_dispatch_chain_readback_timestamps, sum_of_upload_kernel_readback_timestamps |
+| host_destination_heap_index | 1 |
+| host_destination_memory_property_flags | 6 |
+| host_destination_memory_type_index | 3 |
+| host_source_heap_index | 1 |
+| host_source_memory_property_flags | 6 |
+| host_source_memory_type_index | 3 |
+| live_buffer_count | 6 |
+| live_payload_bytes | 33552384 |
+| payload_bytes_per_element | 8 |
+| physical_residency_measured | false |
+| scratch_budget_scope | buffer_payload_excludes_allocation_padding |
+| scratch_size_bytes | 33554432 |
+| staging_destination_heap_index | 1 |
+| staging_destination_memory_property_flags | 6 |
+| staging_destination_memory_type_index | 3 |
+| staging_source_heap_index | 1 |
+| staging_source_memory_property_flags | 6 |
+| staging_source_memory_type_index | 3 |
+
+## Key measurements
+
+All cases share the reported **problem_size=1398016**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| device_local_staged | 1 | 1398016 | 5 | 0.889984 | 1570832734.072 | 12.566662 |
+| device_local_staged_reuse_k16 | 16 | 1398016 | 5 | 1.325184 | 16879358640.008 | 135.034869 |
+| device_local_staged_reuse_k2 | 2 | 1398016 | 5 | 0.919104 | 3042127985.516 | 24.337024 |
+| device_local_staged_reuse_k4 | 4 | 1398016 | 5 | 0.976480 | 5726757332.459 | 45.814059 |
+| device_local_staged_reuse_k64 | 64 | 1398016 | 5 | 2.726688 | 32813810747.691 | 262.510486 |
+| host_visible_direct | 1 | 1398016 | 5 | 0.507968 | 2752173365.251 | 22.017387 |
+| host_visible_direct_reuse_k16 | 16 | 1398016 | 5 | 8.053472 | 2777467407.846 | 22.219739 |
+| host_visible_direct_reuse_k2 | 2 | 1398016 | 5 | 1.012288 | 2762091420.623 | 22.096731 |
+| host_visible_direct_reuse_k4 | 4 | 1398016 | 5 | 2.017568 | 2771685514.441 | 22.173484 |
+| host_visible_direct_reuse_k64 | 64 | 1398016 | 5 | 33.038464 | 2708147206.844 | 21.665178 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_114224Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_114224Z_remaining_review_fixes.json).
+- [heap_placement_gpu_path_gbps.png](./results/charts/heap_placement_gpu_path_gbps.png)
+- [heap_placement_gpu_path_ms.png](./results/charts/heap_placement_gpu_path_ms.png)
+- [heap_placement_harness_wall_clock_ms.png](./results/charts/heap_placement_harness_wall_clock_ms.png)
+- [heap_placement_matched_kernel_count_ratio.png](./results/charts/heap_placement_matched_kernel_count_ratio.png)
+- [heap_placement_reuse_amortization.png](./results/charts/heap_placement_reuse_amortization.png)
+- [device_local_vs_host_visible_heap_placement_relative.csv](./results/tables/device_local_vs_host_visible_heap_placement_relative.csv)
+- [device_local_vs_host_visible_heap_placement_stability.csv](./results/tables/device_local_vs_host_visible_heap_placement_stability.csv)
+- [device_local_vs_host_visible_heap_placement_summary.csv](./results/tables/device_local_vs_host_visible_heap_placement_summary.csv)
+- [device_local_vs_host_visible_reuse_amortization.csv](./results/tables/device_local_vs_host_visible_reuse_amortization.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- Six buffers remain live within the payload budget; active direct/staged paths use two/four. Allocation padding is reported separately. Actual property flags may identify the same heap for both policies. GPU time sums stage intervals and excludes CPU submission gaps; GB/s uses useful kernel payload.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

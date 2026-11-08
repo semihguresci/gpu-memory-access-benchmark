@@ -2,6 +2,7 @@
 
 #include "benchmark_runner.hpp"
 
+#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,4 +26,6 @@ struct ExperimentDescriptor {
     std::string_view category;
     bool enabled = false;
     ExperimentRunFn run = nullptr;
+    std::array<uint32_t, 3> required_local_size{1U, 1U, 1U};
+    uint32_t required_shared_memory_bytes = 0;
 };

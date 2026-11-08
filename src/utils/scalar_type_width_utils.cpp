@@ -10,9 +10,9 @@ uint32_t storage_units_for_variant(WidthVariant variant, uint32_t elements) {
     switch (variant) {
     case WidthVariant::kFp16Storage:
     case WidthVariant::kU16:
-        return (elements + 1U) / 2U;
+        return (elements / 2U) + (elements % 2U);
     case WidthVariant::kU8:
-        return (elements + 3U) / 4U;
+        return (elements / 4U) + ((elements % 4U) != 0U ? 1U : 0U);
     case WidthVariant::kFp32:
     case WidthVariant::kU32:
     default:

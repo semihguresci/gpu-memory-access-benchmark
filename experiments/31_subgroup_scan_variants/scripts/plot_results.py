@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Plot only tables bound to validated raw measurements.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "31_subgroup_scan_variants"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -14,13 +26,17 @@ CHARTS_DIR = ROOT / "results" / "charts"
 
 
 def _load(path: str) -> pd.DataFrame:
+    validate_derived_table(TABLES_DIR / path)
     frame = pd.read_csv(TABLES_DIR / path)
+    validate_summary_table(frame, TABLES_DIR / path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
     return frame
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, EXPERIMENT_ID)
     summary = _load("subgroup_scan_variants_summary.csv")
     relative = _load("subgroup_scan_variants_relative.csv")
     stability = _load("subgroup_scan_variants_stability.csv")
@@ -37,6 +53,7 @@ def main() -> None:
     ax.legend()
     fig.tight_layout()
     fig.savefig(CHARTS_DIR / "subgroup_scan_gpu_ms.png", dpi=150)
+    generated_charts.append(CHARTS_DIR / "subgroup_scan_gpu_ms.png")
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -49,6 +66,7 @@ def main() -> None:
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(CHARTS_DIR / "subgroup_scan_speedup.png", dpi=150)
+    generated_charts.append(CHARTS_DIR / "subgroup_scan_speedup.png")
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -63,9 +81,11 @@ def main() -> None:
     ax.legend()
     fig.tight_layout()
     fig.savefig(CHARTS_DIR / "subgroup_scan_stability.png", dpi=150)
+    generated_charts.append(CHARTS_DIR / "subgroup_scan_stability.png")
     plt.close(fig)
 
     print(f"[ok] Wrote Experiment 31 charts to {CHARTS_DIR}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,206 @@
+// Experiment 46: Dependent Load Latency
+// Shader role: interleaved pointer-chase chains.
+// The pipeline specializes kChainCount to 1, 2, 4, 8, or 16. Each step advances
+// every active chain before advancing any chain again, exposing independent
+// loads while preserving 64 table loads per invocation. Explicit scalar states
+// avoid dynamically indexed private arrays; specialization removes inactive
+// states and branches before register allocation.
+// Keep the chain starts and final mixing in lockstep with the CPU oracle.
+
+#version 450
+
+layout(local_size_x = 256) in;
+layout(constant_id = 0) const uint kChainCount = 1u;
+const uint kChainSteps = 64u / kChainCount;
+
+layout(set = 0, binding = 0) readonly buffer PointerTableBuffer {
+    uint addresses[];
+} pointer_table;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuffer {
+    uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+    uint element_count;
+    uint chain_start_stride;
+} push_constants;
+
+uint chain_start(uint id, uint chain) {
+    return (id + chain * push_constants.chain_start_stride) % push_constants.element_count;
+}
+
+// Mixing must stay in lockstep with the CPU oracle.
+uint mix_chain_final(uint state, uint value) {
+    return (state ^ value) * 2654435761u;
+}
+
+void main() {
+    const uint id = gl_GlobalInvocationID.x;
+    if (id >= push_constants.element_count) {
+        return;
+    }
+
+    uint address_0 = 0u;
+    uint address_1 = 0u;
+    uint address_2 = 0u;
+    uint address_3 = 0u;
+    uint address_4 = 0u;
+    uint address_5 = 0u;
+    uint address_6 = 0u;
+    uint address_7 = 0u;
+    uint address_8 = 0u;
+    uint address_9 = 0u;
+    uint address_10 = 0u;
+    uint address_11 = 0u;
+    uint address_12 = 0u;
+    uint address_13 = 0u;
+    uint address_14 = 0u;
+    uint address_15 = 0u;
+
+    address_0 = chain_start(id, 0u);
+    if (kChainCount > 1u) {
+        address_1 = chain_start(id, 1u);
+    }
+    if (kChainCount > 2u) {
+        address_2 = chain_start(id, 2u);
+    }
+    if (kChainCount > 3u) {
+        address_3 = chain_start(id, 3u);
+    }
+    if (kChainCount > 4u) {
+        address_4 = chain_start(id, 4u);
+    }
+    if (kChainCount > 5u) {
+        address_5 = chain_start(id, 5u);
+    }
+    if (kChainCount > 6u) {
+        address_6 = chain_start(id, 6u);
+    }
+    if (kChainCount > 7u) {
+        address_7 = chain_start(id, 7u);
+    }
+    if (kChainCount > 8u) {
+        address_8 = chain_start(id, 8u);
+    }
+    if (kChainCount > 9u) {
+        address_9 = chain_start(id, 9u);
+    }
+    if (kChainCount > 10u) {
+        address_10 = chain_start(id, 10u);
+    }
+    if (kChainCount > 11u) {
+        address_11 = chain_start(id, 11u);
+    }
+    if (kChainCount > 12u) {
+        address_12 = chain_start(id, 12u);
+    }
+    if (kChainCount > 13u) {
+        address_13 = chain_start(id, 13u);
+    }
+    if (kChainCount > 14u) {
+        address_14 = chain_start(id, 14u);
+    }
+    if (kChainCount > 15u) {
+        address_15 = chain_start(id, 15u);
+    }
+
+    for (uint step = 0u; step < kChainSteps; ++step) {
+        address_0 = pointer_table.addresses[address_0];
+        if (kChainCount > 1u) {
+            address_1 = pointer_table.addresses[address_1];
+        }
+        if (kChainCount > 2u) {
+            address_2 = pointer_table.addresses[address_2];
+        }
+        if (kChainCount > 3u) {
+            address_3 = pointer_table.addresses[address_3];
+        }
+        if (kChainCount > 4u) {
+            address_4 = pointer_table.addresses[address_4];
+        }
+        if (kChainCount > 5u) {
+            address_5 = pointer_table.addresses[address_5];
+        }
+        if (kChainCount > 6u) {
+            address_6 = pointer_table.addresses[address_6];
+        }
+        if (kChainCount > 7u) {
+            address_7 = pointer_table.addresses[address_7];
+        }
+        if (kChainCount > 8u) {
+            address_8 = pointer_table.addresses[address_8];
+        }
+        if (kChainCount > 9u) {
+            address_9 = pointer_table.addresses[address_9];
+        }
+        if (kChainCount > 10u) {
+            address_10 = pointer_table.addresses[address_10];
+        }
+        if (kChainCount > 11u) {
+            address_11 = pointer_table.addresses[address_11];
+        }
+        if (kChainCount > 12u) {
+            address_12 = pointer_table.addresses[address_12];
+        }
+        if (kChainCount > 13u) {
+            address_13 = pointer_table.addresses[address_13];
+        }
+        if (kChainCount > 14u) {
+            address_14 = pointer_table.addresses[address_14];
+        }
+        if (kChainCount > 15u) {
+            address_15 = pointer_table.addresses[address_15];
+        }
+    }
+
+    uint state = 2166136261u;
+    state = mix_chain_final(state, address_0);
+    if (kChainCount > 1u) {
+        state = mix_chain_final(state, address_1);
+    }
+    if (kChainCount > 2u) {
+        state = mix_chain_final(state, address_2);
+    }
+    if (kChainCount > 3u) {
+        state = mix_chain_final(state, address_3);
+    }
+    if (kChainCount > 4u) {
+        state = mix_chain_final(state, address_4);
+    }
+    if (kChainCount > 5u) {
+        state = mix_chain_final(state, address_5);
+    }
+    if (kChainCount > 6u) {
+        state = mix_chain_final(state, address_6);
+    }
+    if (kChainCount > 7u) {
+        state = mix_chain_final(state, address_7);
+    }
+    if (kChainCount > 8u) {
+        state = mix_chain_final(state, address_8);
+    }
+    if (kChainCount > 9u) {
+        state = mix_chain_final(state, address_9);
+    }
+    if (kChainCount > 10u) {
+        state = mix_chain_final(state, address_10);
+    }
+    if (kChainCount > 11u) {
+        state = mix_chain_final(state, address_11);
+    }
+    if (kChainCount > 12u) {
+        state = mix_chain_final(state, address_12);
+    }
+    if (kChainCount > 13u) {
+        state = mix_chain_final(state, address_13);
+    }
+    if (kChainCount > 14u) {
+        state = mix_chain_final(state, address_14);
+    }
+    if (kChainCount > 15u) {
+        state = mix_chain_final(state, address_15);
+    }
+    state = mix_chain_final(state, id);
+    output_buffer.values[id] = state;
+}

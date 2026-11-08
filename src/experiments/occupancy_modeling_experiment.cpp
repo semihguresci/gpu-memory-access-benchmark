@@ -232,6 +232,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -288,11 +289,17 @@ bool validate_output(const uint32_t* output, const std::vector<uint32_t>& refere
     return true;
 }
 
+void poison_output(uint32_t* output_values, const std::vector<uint32_t>& reference_output) {
+    for (std::size_t index = 0U; index < reference_output.size(); ++index) {
+        output_values[index] = ~reference_output[index];
+    }
+}
+
 bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const BufferResources& buffers,
               const PipelineResources& pipeline_resources, const VariantDescriptor& descriptor, uint32_t element_count,
               OccupancyModelingExperimentOutput& output, bool verbose_progress) {
     auto* input_values = static_cast<uint32_t*>(buffers.input_mapped_ptr);
-    const auto* output_values = static_cast<const uint32_t*>(buffers.output_mapped_ptr);
+    auto* output_values = static_cast<uint32_t*>(buffers.output_mapped_ptr);
     if (input_values == nullptr) {
         std::cerr << "[" << kExperimentId << "] Null input pointer for variant=" << descriptor.variant_name << "\n";
         return false;
@@ -312,6 +319,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
     dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
 
     for (int warmup = 0; warmup < runner.warmup_iterations(); ++warmup) {
+        poison_output(output_values, reference_output);
         const double ms = run_dispatch(context, pipeline_resources, element_count);
         if (verbose_progress) {
             const bool dispatch_ok = std::isfinite(ms);
@@ -324,6 +332,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
 
     for (int iteration = 0; iteration < runner.timed_iterations(); ++iteration) {
         const auto start = std::chrono::high_resolution_clock::now();
+        poison_output(output_values, reference_output);
         const double dispatch_ms = run_dispatch(context, pipeline_resources, element_count);
         const auto end = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> e2e_ms = end - start;
@@ -339,6 +348,9 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         }
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
+        append_note(notes, "oracle=reference_complement_before_every_dispatch");
+        append_note(notes, "output_reset_outside_gpu_timing=true");
         record_case_notes(notes, descriptor, element_count, correctness_pass, dispatch_ok);
 
         output.rows.push_back(BenchmarkMeasurementRow{
