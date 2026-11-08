@@ -1,34 +1,71 @@
 # Experiment 22 Results: Prefix Sum Scan
 
-## Run Status
-- Benchmark status: latest `full_refresh_20260405` collection completed (`20/20` row correctness pass)
-- Test status: `ctest --test-dir build-tests-vs -C Release --output-on-failure` passed `37/37` after integration changes
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --label full_refresh_20260405`
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-05T14:04:22Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260405_140422Z_full_refresh_20260405.json)
-- Sweep coverage: `4` variants x current configured problem sizes
+## Run status and provenance
 
-## Key Measurements
-- All `4` benchmark cases are represented in the refreshed export.
-- At the largest tested `problem_size=65536`, the fastest median GPU time came from `variant=items_per_thread_1` at `0.062624 ms`. Median GB/s: `16.809`. Median throughput: `3139499233.521`.
+- Current export: **20/20 correctness checks passed**, 4 variants, 1 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `c351314f02c479125e2ef56e1941019b7c4aeb73bbfa8554a5b0fa74e86d8d26`.
 
-## Artifact Links
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [prefix sum scan relative](./results/tables/prefix_sum_scan_relative.csv)
-- [prefix sum scan stability](./results/tables/prefix_sum_scan_stability.csv)
-- [prefix sum scan summary](./results/tables/prefix_sum_scan_summary.csv)
-- [prefix sum scan effective gbps](./results/charts/prefix_sum_scan_effective_gbps.png)
-- [prefix sum scan median gpu ms](./results/charts/prefix_sum_scan_median_gpu_ms.png)
-- [prefix sum scan speedup vs baseline](./results/charts/prefix_sum_scan_speedup_vs_baseline.png)
-- [prefix sum scan stability ratio](./results/charts/prefix_sum_scan_stability_ratio.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "22_prefix_sum_scan", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\22_prefix_sum_scan\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:40:27.280776Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `4` |
+| row_count | `20` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- The fastest and slowest median GPU-time cases in the current focus set are separated by about `7.61%`, so the sweep does show a large spread on this GPU.
+Exported configuration and metric definitions (all distinct values):
 
-## Limitations
-- Results come from one GPU and driver stack.
-- Reported GB/s values follow each experiment's own metric definition; compare them within an experiment before comparing them across experiments.
-- The refreshed report covers the current sweep only; different sizes, kernels, drivers, or GPUs may shift the ranking.
+| Row-note field | Recorded values |
+|---|---|
+| estimated_traffic_formula | 16N_plus_1036B_minus_1020 |
+| gbps_basis | estimated_source_level_storage_buffer_bytes |
+| gpu_time_scope | kernel_work_and_host_visibility_dependency |
+| traffic_model | source_storage_buffer_operations_not_physical_dram |
+| validation_mode | exact_uint32_wrapping |
+
+## Key measurements
+
+All cases share the reported **problem_size=786432**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| items_per_thread_1 | 3 | 786432 | 5 | 0.586432 | 1341045509.113 | 26.882032 |
+| items_per_thread_2 | 3 | 786432 | 5 | 0.582752 | 1349514029.982 | 24.321131 |
+| items_per_thread_4 | 3 | 786432 | 5 | 0.584224 | 1346113819.357 | 22.897964 |
+| items_per_thread_8 | 3 | 786432 | 5 | 0.607904 | 1293677949.150 | 21.351588 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_114027Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_114027Z_remaining_review_fixes.json).
+- [prefix_sum_scan_effective_gbps.png](./results/charts/prefix_sum_scan_effective_gbps.png)
+- [prefix_sum_scan_median_gpu_ms.png](./results/charts/prefix_sum_scan_median_gpu_ms.png)
+- [prefix_sum_scan_speedup_vs_baseline.png](./results/charts/prefix_sum_scan_speedup_vs_baseline.png)
+- [prefix_sum_scan_stability_ratio.png](./results/charts/prefix_sum_scan_stability_ratio.png)
+- [prefix_sum_scan_relative.csv](./results/tables/prefix_sum_scan_relative.csv)
+- [prefix_sum_scan_stability.csv](./results/tables/prefix_sum_scan_stability.csv)
+- [prefix_sum_scan_summary.csv](./results/tables/prefix_sum_scan_summary.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- Throughput counts one logical input stream across three dispatches. GB/s estimates source-level storage-buffer requests, including per-invocation carry loads: 16N+1036B-1020 bytes for N inputs and B blocks. Cache, broadcast, coalescing, and shared-memory operations are not measured DRAM traffic; the hierarchy remains bounded by the block-prefix implementation.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

@@ -24,11 +24,15 @@ using ExperimentMetrics::compute_throughput_elements_per_second;
 
 constexpr const char* kExperimentId = "28_device_local_vs_host_visible_heap_placement";
 constexpr uint32_t kWorkgroupSize = 256U;
-constexpr uint32_t kDispatchCount = 1U;
+constexpr uint32_t kBaseDispatchCount = 1U;
+constexpr uint32_t kLiveBufferCount = 6U;
 constexpr uint32_t kInputPatternMultiplier = 17U;
 constexpr uint32_t kInputPatternOffset = 23U;
 constexpr uint32_t kInputPatternModulus = 251U;
 constexpr uint32_t kOutputSentinelValue = 0xA5A5A5A5U;
+// Reuse-amortization axis: upload once, run K identical dispatches, read back
+// once. The base variants are the K = 1 case and keep their historical names.
+constexpr std::array<uint32_t, 4> kReuseKernelCounts = {2U, 4U, 16U, 64U};
 
 enum class VariantKind : uint32_t {
     HostVisibleDirect,
@@ -37,13 +41,43 @@ enum class VariantKind : uint32_t {
 
 struct VariantDescriptor {
     VariantKind kind;
-    const char* variant_name;
+    uint32_t reuse_kernel_count = 1U;
+    uint32_t inter_dispatch_dependencies = 0U;
+    std::string variant_name;
 };
 
-constexpr std::array<VariantDescriptor, 2> kVariantDescriptors = {{
-    {VariantKind::HostVisibleDirect, "host_visible_direct"},
-    {VariantKind::DeviceLocalStaged, "device_local_staged"},
-}};
+std::vector<VariantDescriptor> build_variant_descriptors() {
+    std::vector<VariantDescriptor> descriptors;
+    descriptors.reserve(2U + (kReuseKernelCounts.size() * 2U));
+    descriptors.push_back(VariantDescriptor{
+        .kind = VariantKind::HostVisibleDirect,
+        .reuse_kernel_count = kBaseDispatchCount,
+        .inter_dispatch_dependencies = 0U,
+        .variant_name = "host_visible_direct",
+    });
+    descriptors.push_back(VariantDescriptor{
+        .kind = VariantKind::DeviceLocalStaged,
+        .reuse_kernel_count = kBaseDispatchCount,
+        .inter_dispatch_dependencies = 0U,
+        .variant_name = "device_local_staged",
+    });
+    for (const uint32_t kernel_count : kReuseKernelCounts) {
+        const uint32_t dependencies = kernel_count - 1U;
+        descriptors.push_back(VariantDescriptor{
+            .kind = VariantKind::HostVisibleDirect,
+            .reuse_kernel_count = kernel_count,
+            .inter_dispatch_dependencies = dependencies,
+            .variant_name = "host_visible_direct_reuse_k" + std::to_string(kernel_count),
+        });
+        descriptors.push_back(VariantDescriptor{
+            .kind = VariantKind::DeviceLocalStaged,
+            .reuse_kernel_count = kernel_count,
+            .inter_dispatch_dependencies = dependencies,
+            .variant_name = "device_local_staged_reuse_k" + std::to_string(kernel_count),
+        });
+    }
+    return descriptors;
+}
 
 struct BufferResources {
     BufferResource host_src_buffer{};
@@ -332,8 +366,8 @@ void destroy_pipeline_resources(VulkanContext& context, PipelineResources& resou
     resources.device_descriptor_set = VK_NULL_HANDLE;
 }
 
-double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_resources, VkDescriptorSet descriptor_set,
-                    uint32_t logical_count) {
+double run_kernel_chain(VulkanContext& context, const PipelineResources& pipeline_resources,
+                        VkDescriptorSet descriptor_set, uint32_t logical_count, uint32_t kernel_count) {
     const uint32_t group_count_x = VulkanComputeUtils::compute_group_count_1d(logical_count, kWorkgroupSize);
     if (group_count_x == 0U) {
         return std::numeric_limits<double>::quiet_NaN();
@@ -346,7 +380,24 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
                                 1U, &descriptor_set, 0U, nullptr);
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
-        vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        for (uint32_t dispatch_index = 0; dispatch_index < kernel_count; ++dispatch_index) {
+            vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+            if (dispatch_index + 1U < kernel_count) {
+                // Repeated writes target the same output region, so each dispatch
+                // is ordered after the previous one's writes (write-after-write
+                // memory barrier, included in the timed duration).
+                const VkMemoryBarrier write_after_write{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                                        .pNext = nullptr,
+                                                        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                                        .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT};
+                vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0U, 1U, &write_after_write, 0U, nullptr, 0U,
+                                     nullptr);
+            }
+        }
+        if (descriptor_set == pipeline_resources.host_descriptor_set) {
+            VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
+        }
     });
 }
 
@@ -365,23 +416,63 @@ double run_readback_copy(VulkanContext& context, const BufferResource& src_buffe
         VulkanComputeUtils::record_compute_write_to_transfer_read_barrier(command_buffer, src_buffer.buffer,
                                                                           src_buffer.size);
         vkCmdCopyBuffer(command_buffer, src_buffer.buffer, dst_buffer.buffer, 1U, &region);
+        VulkanComputeUtils::record_transfer_write_to_host_read_barrier(command_buffer, dst_buffer.buffer,
+                                                                       src_buffer.size);
     });
 }
 
-void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, uint32_t logical_count,
-                       std::size_t scratch_size_bytes, double upload_ms, double readback_ms, bool correctness_pass,
-                       bool timing_ok) {
-    append_note(notes, std::string("placement=") + descriptor.variant_name);
+void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, const BufferResources& buffers,
+                       uint32_t logical_count, std::size_t scratch_size_bytes, double upload_ms, double dispatch_ms,
+                       double readback_ms, bool correctness_pass, bool timing_ok) {
+    const uint32_t active_buffer_count = descriptor.kind == VariantKind::HostVisibleDirect ? 2U : 4U;
+    const VkDeviceSize span_bytes = compute_span_bytes(logical_count);
+    const std::array<std::pair<const char*, const BufferResource*>, kLiveBufferCount> live_buffers = {{
+        {"host_source", &buffers.host_src_buffer},
+        {"host_destination", &buffers.host_dst_buffer},
+        {"staging_source", &buffers.staging_src_buffer},
+        {"staging_destination", &buffers.staging_dst_buffer},
+        {"device_source", &buffers.device_src_buffer},
+        {"device_destination", &buffers.device_dst_buffer},
+    }};
+    VkDeviceSize allocated_memory_bytes = 0U;
+    for (const auto& [label, buffer] : live_buffers) {
+        allocated_memory_bytes += buffer->allocation_size;
+        append_note(notes, std::string(label) + "_memory_type_index=" + std::to_string(buffer->memory_type_index));
+        append_note(notes, std::string(label) + "_heap_index=" + std::to_string(buffer->heap_index));
+        append_note(notes, std::string(label) + "_memory_property_flags=" + std::to_string(buffer->memory_properties));
+    }
+    append_note(notes, std::string("placement=") + (descriptor.kind == VariantKind::HostVisibleDirect
+                                                        ? std::string("host_visible_direct")
+                                                        : std::string("device_local_staged")));
     append_note(notes, "logical_elements=" + std::to_string(logical_count));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
+    append_note(notes, "reuse_kernel_count=" + std::to_string(descriptor.reuse_kernel_count));
+    if (descriptor.reuse_kernel_count > 1U) {
+        append_note(notes, "inter_dispatch_dependencies=" + std::to_string(descriptor.inter_dispatch_dependencies));
+        append_note(notes, "repeat_contract=identical_chain_with_inter_dispatch_write_barriers");
+    }
     append_note(notes, "scratch_size_bytes=" + std::to_string(static_cast<unsigned long long>(scratch_size_bytes)));
-    append_note(notes,
-                "resident_buffer_count=" + std::to_string(descriptor.kind == VariantKind::HostVisibleDirect ? 2U : 4U));
-    append_note(notes, "gpu_time_scope=full_gpu_path");
+    append_note(notes, "live_buffer_count=" + std::to_string(kLiveBufferCount));
+    append_note(notes, "active_buffer_count=" + std::to_string(active_buffer_count));
+    append_note(notes, "buffer_span_bytes=" + std::to_string(span_bytes));
+    append_note(notes, "live_payload_bytes=" + std::to_string(span_bytes * kLiveBufferCount));
+    append_note(notes, "active_payload_bytes=" + std::to_string(span_bytes * active_buffer_count));
+    append_note(notes, "allocated_memory_bytes=" + std::to_string(allocated_memory_bytes));
+    append_note(notes, "scratch_budget_scope=buffer_payload_excludes_allocation_padding");
+    append_note(notes, "physical_residency_measured=false");
+    std::string gpu_time_scope = "sum_of_upload_kernel_readback_timestamps";
+    if (descriptor.reuse_kernel_count > 1U) {
+        gpu_time_scope = descriptor.kind == VariantKind::HostVisibleDirect
+                             ? std::string("dispatch_chain_timestamps")
+                             : std::string("sum_of_upload_dispatch_chain_readback_timestamps");
+    }
+    append_note(notes, "gpu_time_scope=" + gpu_time_scope);
     append_note(notes, "end_to_end_scope=harness_wall_clock_includes_cpu_fill_validation");
     append_note(notes, "upload_ms=" + std::to_string(upload_ms));
+    append_note(notes, "dispatch_ms=" + std::to_string(dispatch_ms));
     append_note(notes, "readback_ms=" + std::to_string(readback_ms));
     append_note(notes, "payload_bytes_per_element=8");
+    append_note(notes, "gbps_basis=useful_kernel_payload_over_gpu_path_time");
     if (!std::isfinite(upload_ms)) {
         append_note(notes, "upload_ms_non_finite");
     }
@@ -413,14 +504,16 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
 
     std::vector<double> gpu_path_samples;
     gpu_path_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
-    const uint64_t payload_bytes = static_cast<uint64_t>(logical_count) * sizeof(uint32_t) * 2U;
+    const uint64_t payload_bytes =
+        static_cast<uint64_t>(logical_count) * sizeof(uint32_t) * 2U * descriptor.reuse_kernel_count;
+    const uint32_t kernel_count = descriptor.reuse_kernel_count;
 
     for (int warmup = 0; warmup < runner.warmup_iterations(); ++warmup) {
         if (descriptor.kind == VariantKind::HostVisibleDirect) {
             fill_input_values(host_src_values, logical_count);
             fill_output_values(host_dst_values, logical_count);
-            const double dispatch_ms =
-                run_dispatch(context, pipeline_resources, pipeline_resources.host_descriptor_set, logical_count);
+            const double dispatch_ms = run_kernel_chain(
+                context, pipeline_resources, pipeline_resources.host_descriptor_set, logical_count, kernel_count);
             const bool dispatch_ok = std::isfinite(dispatch_ms);
             const bool data_ok = dispatch_ok && validate_input_values(host_src_values, logical_count) &&
                                  validate_output_values(host_dst_values, reference_values);
@@ -433,8 +526,8 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
             fill_input_values(staging_src_values, logical_count);
             fill_output_values(staging_dst_values, logical_count);
             const double upload_ms = run_upload_copy(context, buffers.staging_src_buffer, buffers.device_src_buffer);
-            const double dispatch_ms =
-                run_dispatch(context, pipeline_resources, pipeline_resources.device_descriptor_set, logical_count);
+            const double dispatch_ms = run_kernel_chain(
+                context, pipeline_resources, pipeline_resources.device_descriptor_set, logical_count, kernel_count);
             const double readback_ms =
                 run_readback_copy(context, buffers.device_dst_buffer, buffers.staging_dst_buffer);
             const bool timing_ok = std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
@@ -454,7 +547,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         // The headline gpu_ms/gbps fields below use gpu_path_ms instead.
         const auto start = std::chrono::high_resolution_clock::now();
         double upload_ms = 0.0;
-        double dispatch_ms = std::numeric_limits<double>::quiet_NaN();
+        double chain_ms = std::numeric_limits<double>::quiet_NaN();
         double readback_ms = 0.0;
         double gpu_path_ms = std::numeric_limits<double>::quiet_NaN();
         bool correctness_pass = false;
@@ -463,22 +556,22 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         if (descriptor.kind == VariantKind::HostVisibleDirect) {
             fill_input_values(host_src_values, logical_count);
             fill_output_values(host_dst_values, logical_count);
-            dispatch_ms =
-                run_dispatch(context, pipeline_resources, pipeline_resources.host_descriptor_set, logical_count);
-            timing_ok = std::isfinite(dispatch_ms);
-            gpu_path_ms = dispatch_ms;
+            chain_ms = run_kernel_chain(context, pipeline_resources, pipeline_resources.host_descriptor_set,
+                                        logical_count, kernel_count);
+            timing_ok = std::isfinite(chain_ms);
+            gpu_path_ms = chain_ms;
             correctness_pass = timing_ok && validate_input_values(host_src_values, logical_count) &&
                                validate_output_values(host_dst_values, reference_values);
         } else {
             fill_input_values(staging_src_values, logical_count);
             fill_output_values(staging_dst_values, logical_count);
             upload_ms = run_upload_copy(context, buffers.staging_src_buffer, buffers.device_src_buffer);
-            dispatch_ms =
-                run_dispatch(context, pipeline_resources, pipeline_resources.device_descriptor_set, logical_count);
+            chain_ms = run_kernel_chain(context, pipeline_resources, pipeline_resources.device_descriptor_set,
+                                        logical_count, kernel_count);
             readback_ms = run_readback_copy(context, buffers.device_dst_buffer, buffers.staging_dst_buffer);
-            timing_ok = std::isfinite(upload_ms) && std::isfinite(dispatch_ms) && std::isfinite(readback_ms);
+            timing_ok = std::isfinite(upload_ms) && std::isfinite(chain_ms) && std::isfinite(readback_ms);
             if (timing_ok) {
-                gpu_path_ms = upload_ms + dispatch_ms + readback_ms;
+                gpu_path_ms = upload_ms + chain_ms + readback_ms;
             }
             correctness_pass = timing_ok && validate_input_values(staging_src_values, logical_count) &&
                                validate_output_values(staging_dst_values, reference_values);
@@ -490,18 +583,19 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         gpu_path_samples.push_back(gpu_path_ms);
 
         std::string notes;
-        record_case_notes(notes, descriptor, logical_count, scratch_size_bytes, upload_ms, readback_ms,
-                          correctness_pass, timing_ok);
+        append_note(notes, "host_read_dependency=shader_or_transfer_to_host_in_measured_gpu_stages");
+        record_case_notes(notes, descriptor, buffers, logical_count, scratch_size_bytes, upload_ms, chain_ms,
+                          readback_ms, correctness_pass, timing_ok);
 
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = descriptor.variant_name,
             .problem_size = logical_count,
-            .dispatch_count = kDispatchCount,
+            .dispatch_count = kernel_count,
             .iteration = iteration,
             .gpu_ms = gpu_path_ms,
             .end_to_end_ms = end_to_end_ms.count(),
-            .throughput = compute_throughput_elements_per_second(logical_count, kDispatchCount, gpu_path_ms),
+            .throughput = compute_throughput_elements_per_second(logical_count, kernel_count, gpu_path_ms),
             .gbps = compute_effective_gbps_from_bytes(payload_bytes, gpu_path_ms),
             .correctness_pass = correctness_pass,
             .notes = std::move(notes),
@@ -537,8 +631,12 @@ DeviceLocalVsHostVisibleHeapPlacementExperimentOutput run_device_local_vs_host_v
 
     VkPhysicalDeviceProperties device_properties{};
     vkGetPhysicalDeviceProperties(context.physical_device(), &device_properties);
+    const std::size_t per_buffer_budget =
+        config.scratch_size_bytes == 0U
+            ? config.max_buffer_bytes
+            : std::min(config.max_buffer_bytes, config.scratch_size_bytes / kLiveBufferCount);
     const uint32_t logical_count =
-        determine_logical_count(config.max_buffer_bytes, device_properties.limits.maxComputeWorkGroupCount[0]);
+        determine_logical_count(per_buffer_budget, device_properties.limits.maxComputeWorkGroupCount[0]);
     if (logical_count == 0U) {
         std::cerr << "Scratch buffer too small for heap placement experiment.\n";
         output.all_points_correct = false;
@@ -570,7 +668,8 @@ DeviceLocalVsHostVisibleHeapPlacementExperimentOutput run_device_local_vs_host_v
         return output;
     }
 
-    for (const VariantDescriptor& descriptor : kVariantDescriptors) {
+    const std::vector<VariantDescriptor> descriptors = build_variant_descriptors();
+    for (const VariantDescriptor& descriptor : descriptors) {
         if (!run_case(context, runner, buffers, pipeline_resources, descriptor, logical_count, reference_values,
                       config.scratch_size_bytes, output, config.verbose_progress)) {
             output.all_points_correct = false;

@@ -1,35 +1,60 @@
 # Experiment 21 Results: Parallel Reduction
 
-## Run Status
-- Benchmark status: latest `full_refresh_20260405` collection completed (`60/60` row correctness pass)
-- Test status: `ctest --test-dir build-tests-vs -C Release --output-on-failure` passed `37/37` after integration changes
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --label full_refresh_20260405`
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-05T14:04:22Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260405_140422Z_full_refresh_20260405.json)
-- Sweep coverage: `2` variants x current configured problem sizes
+## Run status and provenance
 
-## Key Measurements
-- All `2` benchmark cases are represented in the refreshed export.
-- At the largest tested `problem_size=8388607`, the fastest median GPU time came from `variant=shared_tree` at `0.281248 ms`. Median GB/s: `119.305`. Median throughput: `29826370320.856`.
+- Current export: **60/60 correctness checks passed**, 2 variants, 6 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `96bc41c9ec22346497dadbe5939e47b961e54aa41d6d5e319f1987c7e66dd13b`.
 
-## Artifact Links
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [parallel reduction relative](./results/tables/parallel_reduction_relative.csv)
-- [parallel reduction stability](./results/tables/parallel_reduction_stability.csv)
-- [parallel reduction status overview](./results/tables/parallel_reduction_status_overview.csv)
-- [parallel reduction summary](./results/tables/parallel_reduction_summary.csv)
-- [parallel reduction gbps](./results/charts/parallel_reduction_gbps.png)
-- [parallel reduction median gpu ms](./results/charts/parallel_reduction_median_gpu_ms.png)
-- [parallel reduction speedup vs global atomic](./results/charts/parallel_reduction_speedup_vs_global_atomic.png)
-- [parallel reduction stability ratio](./results/charts/parallel_reduction_stability_ratio.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "21_parallel_reduction", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\21_parallel_reduction\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:40:24.146200Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `12` |
+| row_count | `60` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- The fastest and slowest median GPU-time cases in the current focus set are separated by about `2.87%`, so the sweep does not show a large spread on this GPU.
+## Key measurements
 
-## Limitations
-- Results come from one GPU and driver stack.
-- Reported GB/s values follow each experiment's own metric definition; compare them within an experiment before comparing them across experiments.
-- The refreshed report covers the current sweep only; different sizes, kernels, drivers, or GPUs may shift the ranking.
+All cases share the reported **problem_size=4194303**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| global_atomic | 1 | 4194303 | 5 | 0.146848 | 28562207180.214 | 114.248856 |
+| shared_tree | 1 | 4194303 | 5 | 0.142336 | 29467618873.651 | 117.870504 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_114024Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_114024Z_remaining_review_fixes.json).
+- [parallel_reduction_gbps.png](./results/charts/parallel_reduction_gbps.png)
+- [parallel_reduction_median_gpu_ms.png](./results/charts/parallel_reduction_median_gpu_ms.png)
+- [parallel_reduction_speedup_vs_global_atomic.png](./results/charts/parallel_reduction_speedup_vs_global_atomic.png)
+- [parallel_reduction_stability_ratio.png](./results/charts/parallel_reduction_stability_ratio.png)
+- [parallel_reduction_relative.csv](./results/tables/parallel_reduction_relative.csv)
+- [parallel_reduction_stability.csv](./results/tables/parallel_reduction_stability.csv)
+- [parallel_reduction_status_overview.csv](./results/tables/parallel_reduction_status_overview.csv)
+- [parallel_reduction_summary.csv](./results/tables/parallel_reduction_summary.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- The global atomic and shared reduction have different communication structures; this is not a full multi-pass reduction study.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

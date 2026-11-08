@@ -17,6 +17,9 @@ struct AppOptions {
     bool verbose_progress = false;
     VkDeviceSize scratch_size_bytes = static_cast<VkDeviceSize>(4ULL * 1024ULL * 1024ULL);
     std::string output_path = "results/tables/benchmark_results.json";
+    // Either a physical-device index ("0", "1", ...) or a case-insensitive
+    // substring of a deviceName. Empty selects the first compute-capable device.
+    std::string device_selection;
 };
 
 class ArgumentParser {

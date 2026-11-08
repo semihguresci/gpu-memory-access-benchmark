@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "10_scalar_type_width_sweep"
 
@@ -39,8 +47,11 @@ def _extract_note_float(series: pd.Series, key: str) -> pd.Series:
 def _format_problem_size_ticks(values: np.ndarray) -> list[str]:
     labels: list[str] = []
     for value in values:
-        exponent = int(round(np.log2(value)))
-        labels.append(f"2^{exponent}")
+        count = int(value)
+        if count > 0 and count & (count - 1) == 0:
+            labels.append(f"2^{count.bit_length() - 1}")
+        else:
+            labels.append(f"{count:,}")
     return labels
 
 
@@ -63,7 +74,7 @@ def _load_rows() -> tuple[pd.DataFrame, dict]:
         )
 
     payload = json.loads(INPUT_JSON.read_text(encoding="utf-8"))
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, "10_scalar_type_width_sweep", INPUT_JSON)
     if not isinstance(rows, list) or not rows:
         raise ValueError("Input benchmark JSON has no rows[] payload.")
 
@@ -75,14 +86,20 @@ def _load_rows() -> tuple[pd.DataFrame, dict]:
     for column in ["problem_size", "dispatch_count", "iteration", "gpu_ms", "end_to_end_ms", "throughput", "gbps"]:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
     frame["variant"] = frame["variant"].fillna("unknown_variant").astype(str)
-    frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.lower().isin(["1", "true", "yes"])
+    frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.strip().str.lower().isin(["1", "true", "yes"])
 
-    note_maps = frame.get("notes", "").fillna("").astype(str).apply(_parse_notes_field)
+    if "notes" not in frame.columns:
+        frame["notes"] = ""
+    note_maps = frame["notes"].fillna("").astype(str).apply(_parse_notes_field)
     frame["storage_bytes_per_element"] = _extract_note_float(note_maps, "storage_bytes_per_element")
     frame["storage_ratio_vs_fp32"] = _extract_note_float(note_maps, "storage_ratio_vs_fp32")
     frame["validation_tolerance"] = _extract_note_float(note_maps, "validation_tolerance")
     frame["max_abs_error"] = _extract_note_float(note_maps, "max_abs_error")
     frame["mean_abs_error"] = _extract_note_float(note_maps, "mean_abs_error")
+    # Missing historical precision measurements stay unavailable, never zero.
+    frame["max_abs_error_vs_fp32"] = _extract_note_float(note_maps, "max_abs_error_vs_fp32")
+    frame["rms_error_vs_fp32"] = _extract_note_float(note_maps, "rms_error_vs_fp32")
+    frame["error_vs_fp32_available"] = frame[["max_abs_error_vs_fp32", "rms_error_vs_fp32"]].notna().all(axis=1)
 
     metadata = payload.get("metadata", {})
     return frame, metadata
@@ -103,6 +120,9 @@ def _build_summary(rows: pd.DataFrame) -> pd.DataFrame:
             gbps_median=("gbps", "median"),
             max_abs_error_median=("max_abs_error", "median"),
             mean_abs_error_median=("mean_abs_error", "median"),
+            max_abs_error_vs_fp32_max=("max_abs_error_vs_fp32", "max"),
+            rms_error_vs_fp32_median=("rms_error_vs_fp32", "median"),
+            error_vs_fp32_available=("error_vs_fp32_available", "all"),
             validation_tolerance_median=("validation_tolerance", "median"),
             storage_bytes_per_element_median=("storage_bytes_per_element", "median"),
             storage_ratio_vs_fp32_median=("storage_ratio_vs_fp32", "median"),
@@ -182,6 +202,9 @@ def _build_largest_size_comparison(summary: pd.DataFrame) -> pd.DataFrame:
             "delta_gbps_vs_fp32_pct",
             "max_abs_error_median",
             "mean_abs_error_median",
+            "max_abs_error_vs_fp32_max",
+            "rms_error_vs_fp32_median",
+            "error_vs_fp32_available",
         ]
     ].sort_values("gpu_ms_median")
 
@@ -315,7 +338,7 @@ def _build_stability_overview(summary: pd.DataFrame) -> pd.DataFrame:
     return stability
 
 
-def _plot_line_metric(summary: pd.DataFrame, metric_column: str, y_label: str, title: str, output_path: Path) -> None:
+def _plot_line_metric(summary: pd.DataFrame, metric_column: str, y_label: str, title: str, output_path: Path) -> Path | None:
     plot_frame = summary.copy()
     dispatch_counts = sorted(plot_frame["dispatch_count"].unique().tolist())
     if not dispatch_counts:
@@ -346,9 +369,10 @@ def _plot_line_metric(summary: pd.DataFrame, metric_column: str, y_label: str, t
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_speedup_by_size(speedup_by_size: pd.DataFrame, output_path: Path) -> None:
+def _plot_speedup_by_size(speedup_by_size: pd.DataFrame, output_path: Path) -> Path | None:
     if speedup_by_size.empty:
         return
 
@@ -383,9 +407,10 @@ def _plot_speedup_by_size(speedup_by_size: pd.DataFrame, output_path: Path) -> N
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_stability_ratio(speedup_by_size: pd.DataFrame, output_path: Path) -> None:
+def _plot_stability_ratio(speedup_by_size: pd.DataFrame, output_path: Path) -> Path | None:
     if speedup_by_size.empty:
         return
 
@@ -420,9 +445,10 @@ def _plot_stability_ratio(speedup_by_size: pd.DataFrame, output_path: Path) -> N
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_scaling_efficiency(scaling_by_size: pd.DataFrame, output_path: Path) -> None:
+def _plot_scaling_efficiency(scaling_by_size: pd.DataFrame, output_path: Path) -> Path | None:
     if scaling_by_size.empty:
         return
 
@@ -456,9 +482,10 @@ def _plot_scaling_efficiency(scaling_by_size: pd.DataFrame, output_path: Path) -
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_error_bars(summary: pd.DataFrame, output_path: Path) -> None:
+def _plot_error_bars(summary: pd.DataFrame, output_path: Path) -> Path | None:
     if summary.empty:
         return
 
@@ -472,13 +499,12 @@ def _plot_error_bars(summary: pd.DataFrame, output_path: Path) -> None:
     width = 0.36
 
     fig, ax = plt.subplots(figsize=(11, 6))
-    ax.bar(x - (width / 2.0), largest["max_abs_error_median"], width=width, label="max_abs_error")
-    ax.bar(x + (width / 2.0), largest["mean_abs_error_median"], width=width, label="mean_abs_error")
+    ax.bar(x - (width / 2.0), largest["max_abs_error_median"], width=width, label="max format residual")
+    ax.bar(x + (width / 2.0), largest["mean_abs_error_median"], width=width, label="mean format residual")
     ax.set_xticks(x)
     ax.set_xticklabels(variants)
-    ax.set_ylabel("absolute error")
-    ax.set_yscale("log")
-    ax.set_title("Experiment 10 Error Metrics at Largest Problem Size")
+    ax.set_ylabel("absolute residual versus representation-specific oracle")
+    ax.set_title("Experiment 10: Implementation Correctness Residual at Largest Problem Size")
     ax.grid(True, alpha=0.3, axis="y")
     ax.legend()
 
@@ -486,9 +512,38 @@ def _plot_error_bars(summary: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
+
+
+def _plot_fp32_error_bars(summary: pd.DataFrame, output_path: Path) -> Path | None:
+    largest = summary[summary["problem_size"] == summary["problem_size"].max()].copy()
+    largest = largest.sort_values("variant")
+    fig, ax = plt.subplots(figsize=(11, 6))
+    if largest.empty or not largest["error_vs_fp32_available"].all():
+        ax.text(0.5, 0.5, "Error versus fp32 is unavailable for this run.", ha="center", va="center")
+        ax.set_axis_off()
+        print("[info] Common fp32 error unavailable in this run; format residual is a separate metric.")
+    else:
+        x = np.arange(len(largest))
+        width = 0.36
+        ax.bar(x - width / 2.0, largest["max_abs_error_vs_fp32_max"], width=width, label="max absolute error vs fp32")
+        ax.bar(x + width / 2.0, largest["rms_error_vs_fp32_median"], width=width, label="RMS error vs fp32 (median)")
+        ax.set_xticks(x)
+        ax.set_xticklabels(largest["variant"])
+        ax.set_ylabel("absolute error versus common fp32 transform")
+        ax.grid(True, alpha=0.3, axis="y")
+        ax.legend()
+    ax.set_title("Experiment 10: Numerical Precision at Largest Problem Size")
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     rows, metadata = _load_rows()
     summary = _build_summary(rows)
     status = _build_status(rows, summary)
@@ -510,44 +565,53 @@ def main() -> None:
     stability_path = TABLES_DIR / "scalar_type_width_sweep_stability_overview.csv"
 
     summary.to_csv(summary_path, index=False)
+    generated_tables.append(summary_path)
     status.to_csv(status_path, index=False)
+    generated_tables.append(status_path)
     largest_size_comparison.to_csv(largest_size_path, index=False)
+    generated_tables.append(largest_size_path)
     speedup_by_size.to_csv(speedup_path, index=False)
+    generated_tables.append(speedup_path)
     scaling_by_size.to_csv(scaling_path, index=False)
+    generated_tables.append(scaling_path)
     speedup_crossover.to_csv(crossover_path, index=False)
+    generated_tables.append(crossover_path)
     stability_overview.to_csv(stability_path, index=False)
+    generated_tables.append(stability_path)
 
-    _plot_line_metric(
+    generated_charts.append(_plot_line_metric(
         summary,
         metric_column="gpu_ms_median",
         y_label="gpu_ms (median)",
         title="Experiment 10: Dispatch Time",
         output_path=CHARTS_DIR / "scalar_type_width_sweep_median_gpu_ms.png",
-    )
-    _plot_line_metric(
+    ))
+    generated_charts.append(_plot_line_metric(
         summary,
         metric_column="gbps_median",
         y_label="GB/s (median)",
         title="Experiment 10: Effective Bandwidth",
         output_path=CHARTS_DIR / "scalar_type_width_sweep_median_gbps.png",
-    )
-    _plot_speedup_by_size(
+    ))
+    generated_charts.append(_plot_speedup_by_size(
         speedup_by_size,
         output_path=CHARTS_DIR / "scalar_type_width_sweep_speedup_vs_fp32.png",
-    )
-    _plot_stability_ratio(
+    ))
+    generated_charts.append(_plot_stability_ratio(
         speedup_by_size,
         output_path=CHARTS_DIR / "scalar_type_width_sweep_p95_to_median_ratio.png",
-    )
-    _plot_scaling_efficiency(
+    ))
+    generated_charts.append(_plot_scaling_efficiency(
         scaling_by_size,
         output_path=CHARTS_DIR / "scalar_type_width_sweep_gpu_ms_per_million_elements.png",
-    )
-    _plot_error_bars(
+    ))
+    generated_charts.append(_plot_error_bars(
         summary,
         output_path=CHARTS_DIR / "scalar_type_width_sweep_error_metrics.png",
-    )
+    ))
+    generated_charts.append(_plot_fp32_error_bars(summary, CHARTS_DIR / "scalar_type_width_sweep_error_vs_fp32.png"))
 
+    write_analysis_provenance(TABLES_DIR, [INPUT_JSON], EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
     print(f"rows={len(rows)}")
     print(f"summary_rows={len(summary)}")
     print(f"gpu={metadata.get('gpu_name', 'unknown')}")
@@ -564,6 +628,7 @@ def main() -> None:
     print(f"wrote={CHARTS_DIR / 'scalar_type_width_sweep_p95_to_median_ratio.png'}")
     print(f"wrote={CHARTS_DIR / 'scalar_type_width_sweep_gpu_ms_per_million_elements.png'}")
     print(f"wrote={CHARTS_DIR / 'scalar_type_width_sweep_error_metrics.png'}")
+    print(f"wrote={CHARTS_DIR / 'scalar_type_width_sweep_error_vs_fp32.png'}")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 #include "utils/gpu_timestamp_timer.hpp"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -49,9 +50,20 @@ std::string resolve_shader_path(const std::string& user_path, const std::string&
 
 uint32_t compute_group_count_1d(uint32_t element_count, uint32_t local_size_x);
 
+bool validate_compute_requirements(const VkPhysicalDeviceLimits& limits, const std::array<uint32_t, 3>& local_size,
+                                   uint32_t shared_memory_bytes, std::string& error);
+
+// For a compute pipeline with one descriptor set of storage buffers.
+bool validate_storage_buffer_descriptor_requirements(const VkPhysicalDeviceLimits& limits, uint32_t descriptor_count,
+                                                     std::string& error);
+
 void record_transfer_write_to_compute_read_write_barrier(VkCommandBuffer command_buffer, VkBuffer buffer,
                                                          VkDeviceSize size);
 
 void record_compute_write_to_transfer_read_barrier(VkCommandBuffer command_buffer, VkBuffer buffer, VkDeviceSize size);
+
+void record_compute_write_to_host_read_barrier(VkCommandBuffer command_buffer);
+void record_compute_write_to_host_read_barrier(VkCommandBuffer command_buffer, VkBuffer buffer, VkDeviceSize size);
+void record_transfer_write_to_host_read_barrier(VkCommandBuffer command_buffer, VkBuffer buffer, VkDeviceSize size);
 
 } // namespace VulkanComputeUtils

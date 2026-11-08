@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "11_coalesced_vs_strided"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -22,10 +34,12 @@ def _load_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing input table: {path}")
 
+    validate_derived_table(path)
     frame = pd.read_csv(path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
 
+    validate_summary_table(frame, path)
     return frame
 
 
@@ -45,7 +59,7 @@ def _prepare_axes(ax: plt.Axes, title: str, ylabel: str, yscale: str | None = No
         ax.axhline(baseline, color="black", linestyle="--", linewidth=1.0, alpha=0.7)
 
 
-def _plot_series(frame: pd.DataFrame, x_column: str, y_column: str, output_path: Path, title: str, ylabel: str, *, yscale: str | None = None, baseline: float | None = None, color: str = "tab:blue") -> None:
+def _plot_series(frame: pd.DataFrame, x_column: str, y_column: str, output_path: Path, title: str, ylabel: str, *, yscale: str | None = None, baseline: float | None = None, color: str = "tab:blue") -> Path | None:
     plot_frame = frame.sort_values(x_column).reset_index(drop=True)
     x_values = plot_frame[x_column].to_numpy(dtype=float)
     y_values = plot_frame[y_column].to_numpy(dtype=float)
@@ -61,14 +75,17 @@ def _plot_series(frame: pd.DataFrame, x_column: str, y_column: str, output_path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, "11_coalesced_vs_strided")
     summary = _load_table(SUMMARY_CSV)
     relative = _load_table(RELATIVE_CSV)
     stability = _load_table(STABILITY_CSV)
 
-    _plot_series(
+    generated_charts.append(_plot_series(
         summary,
         "stride",
         "gpu_ms_median",
@@ -77,8 +94,8 @@ def main() -> None:
         "GPU ms (median, log scale)",
         yscale="log",
         color="tab:blue",
-    )
-    _plot_series(
+    ))
+    generated_charts.append(_plot_series(
         summary,
         "stride",
         "gbps_median",
@@ -87,8 +104,8 @@ def main() -> None:
         "GB/s (median, log scale)",
         yscale="log",
         color="tab:green",
-    )
-    _plot_series(
+    ))
+    generated_charts.append(_plot_series(
         relative,
         "stride",
         "slowdown_vs_stride_1",
@@ -98,8 +115,8 @@ def main() -> None:
         yscale="log",
         baseline=1.0,
         color="tab:red",
-    )
-    _plot_series(
+    ))
+    generated_charts.append(_plot_series(
         stability,
         "stride",
         "p95_to_median_gpu_ms",
@@ -109,9 +126,10 @@ def main() -> None:
         yscale=None,
         baseline=1.0,
         color="tab:orange",
-    )
+    ))
 
     print(f"[ok] Wrote Experiment 11 charts to {CHARTS_DIR.relative_to(ROOT)}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

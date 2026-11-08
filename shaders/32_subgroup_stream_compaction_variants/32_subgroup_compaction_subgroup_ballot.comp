@@ -28,8 +28,8 @@ layout(push_constant) uniform PushConstants {
     uint pattern_seed;
 } push_constants;
 
-shared uint subgroup_counts[32];
-shared uint subgroup_offsets[32];
+shared uint subgroup_counts[256];
+shared uint subgroup_offsets[256];
 
 const uint kHashMul0 = 0x7feb352du;
 const uint kHashMul1 = 0x846ca68bu;
@@ -49,11 +49,29 @@ bool is_index_valid(uint index_value) {
 }
 
 void main() {
-    const uint global_index = gl_GlobalInvocationID.x;
     const uint local_index = gl_LocalInvocationID.x;
     const uint subgroup_index = gl_SubgroupID;
-    const uint subgroup_count = gl_WorkGroupSize.x / gl_SubgroupSize;
+    const uint subgroup_count = gl_NumSubgroups;
     const uint block_base = gl_WorkGroupID.x * gl_WorkGroupSize.x;
+
+    // Define logical input order from actual subgroup membership, independent
+    // of the implementation's mapping from local IDs to subgroup lanes.
+    const uvec4 active_lanes = subgroupBallot(true);
+    const uint lane_rank = subgroupBallotExclusiveBitCount(active_lanes);
+    if (subgroupElect()) {
+        subgroup_counts[subgroup_index] = subgroupBallotBitCount(active_lanes);
+    }
+    barrier();
+    if (local_index == 0u) {
+        uint running_count = 0u;
+        for (uint subgroup_iter = 0u; subgroup_iter < subgroup_count; ++subgroup_iter) {
+            subgroup_offsets[subgroup_iter] = running_count;
+            running_count += subgroup_counts[subgroup_iter];
+        }
+    }
+    barrier();
+    const uint global_index = block_base + subgroup_offsets[subgroup_index] + lane_rank;
+    barrier();
 
     const bool valid = global_index < push_constants.logical_count && is_index_valid(global_index);
     const uvec4 ballot = subgroupBallot(valid);

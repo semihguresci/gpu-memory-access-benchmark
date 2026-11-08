@@ -1,4 +1,6 @@
 set(EXPERIMENT_MANIFEST_JSON_PATH "${CMAKE_SOURCE_DIR}/config/experiment_manifest.json")
+# Manifest-only changes must regenerate the registry and its device requirements.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${EXPERIMENT_MANIFEST_JSON_PATH}")
 file(READ "${EXPERIMENT_MANIFEST_JSON_PATH}" _experiment_manifest_json)
 
 # CMake consumes the same manifest JSON as the Python tooling so new experiments
@@ -22,6 +24,10 @@ foreach(_index RANGE ${_experiment_last_index})
     string(JSON _enabled_value GET "${_experiment_manifest_json}" experiments ${_index} enabled)
     string(JSON _source_path GET "${_experiment_manifest_json}" experiments ${_index} source)
     string(JSON _adapter_source_path GET "${_experiment_manifest_json}" experiments ${_index} adapter_source)
+    string(JSON _local_x GET "${_experiment_manifest_json}" experiments ${_index} required_local_size 0)
+    string(JSON _local_y GET "${_experiment_manifest_json}" experiments ${_index} required_local_size 1)
+    string(JSON _local_z GET "${_experiment_manifest_json}" experiments ${_index} required_local_size 2)
+    string(JSON _shared_bytes GET "${_experiment_manifest_json}" experiments ${_index} required_shared_memory_bytes)
 
     if(_experiment_id STREQUAL "" OR _display_name STREQUAL "" OR _category STREQUAL "" OR _adapter_symbol STREQUAL "")
         message(FATAL_ERROR "Experiment manifest entry ${_index} is missing required registry fields.")
@@ -37,7 +43,7 @@ foreach(_index RANGE ${_experiment_last_index})
     endif()
 
     list(APPEND EXPERIMENT_MANIFEST_ENTRIES
-        "${_experiment_id}|${_display_name}|${_category}|${_adapter_symbol}|${_enabled_literal}"
+        "${_experiment_id}|${_display_name}|${_category}|${_adapter_symbol}|${_enabled_literal}|${_local_x}|${_local_y}|${_local_z}|${_shared_bytes}"
     )
     list(APPEND EXPERIMENT_SOURCE_FILES "${CMAKE_SOURCE_DIR}/${_source_path}")
     list(APPEND EXPERIMENT_ADAPTER_SOURCE_FILES "${CMAKE_SOURCE_DIR}/${_adapter_source_path}")

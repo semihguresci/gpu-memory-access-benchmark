@@ -59,6 +59,8 @@ struct ValidationStats {
     bool pass = true;
     float max_abs_error = 0.0F;
     double mean_abs_error = 0.0;
+    float max_abs_error_vs_fp32 = 0.0F;
+    double rms_error_vs_fp32 = 0.0;
 };
 
 std::vector<uint32_t> make_element_counts(uint32_t max_elements) {
@@ -103,12 +105,16 @@ ValidationStats validate_variant_values(WidthVariant variant, uint32_t count, Re
     ValidationStats stats{};
     const float tolerance = validation_tolerance(variant);
     double error_sum = 0.0;
+    double squared_error_vs_fp32_sum = 0.0;
 
     for (uint32_t index = 0U; index < count; ++index) {
         const float actual = read_actual(index);
         if (!std::isfinite(actual)) {
             stats.pass = false;
             stats.max_abs_error = std::numeric_limits<float>::infinity();
+            error_sum = std::numeric_limits<double>::infinity();
+            stats.max_abs_error_vs_fp32 = std::numeric_limits<float>::infinity();
+            squared_error_vs_fp32_sum = std::numeric_limits<double>::infinity();
             continue;
         }
 
@@ -116,6 +122,9 @@ ValidationStats validate_variant_values(WidthVariant variant, uint32_t count, Re
         const float abs_error = std::fabs(actual - expected);
         stats.max_abs_error = std::max(stats.max_abs_error, abs_error);
         error_sum += static_cast<double>(abs_error);
+        const float error_vs_fp32 = actual - expected_variant_value(WidthVariant::kFp32, index);
+        stats.max_abs_error_vs_fp32 = std::max(stats.max_abs_error_vs_fp32, std::fabs(error_vs_fp32));
+        squared_error_vs_fp32_sum += static_cast<double>(error_vs_fp32) * static_cast<double>(error_vs_fp32);
 
         if (abs_error > tolerance) {
             stats.pass = false;
@@ -124,6 +133,7 @@ ValidationStats validate_variant_values(WidthVariant variant, uint32_t count, Re
 
     if (count > 0U) {
         stats.mean_abs_error = error_sum / static_cast<double>(count);
+        stats.rms_error_vs_fp32 = std::sqrt(squared_error_vs_fp32_sum / static_cast<double>(count));
     }
 
     return stats;
@@ -337,6 +347,7 @@ double run_dispatch(VulkanContext& context, uint32_t dispatch_elements, uint32_t
         for (uint32_t dispatch_index = 0U; dispatch_index < kDispatchCount; ++dispatch_index) {
             vkCmdDispatch(command_buffer, group_count, 1U, 1U);
         }
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -420,6 +431,9 @@ void run_variant_case(VulkanContext& context, const BenchmarkRunner& runner, Wid
         append_note(notes, "validation_tolerance=" + std::to_string(tolerance));
         append_note(notes, "max_abs_error=" + std::to_string(stats.max_abs_error));
         append_note(notes, "mean_abs_error=" + std::to_string(stats.mean_abs_error));
+        append_note(notes, "format_error_reference=representation_specific_oracle");
+        append_note(notes, "max_abs_error_vs_fp32=" + std::to_string(stats.max_abs_error_vs_fp32));
+        append_note(notes, "rms_error_vs_fp32=" + std::to_string(stats.rms_error_vs_fp32));
         if (!dispatch_ok) {
             append_note(notes, "dispatch_ms_non_finite");
         }
@@ -439,6 +453,7 @@ void run_variant_case(VulkanContext& context, const BenchmarkRunner& runner, Wid
                       << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant_name,
@@ -489,14 +504,18 @@ run_scalar_type_width_sweep_experiment(VulkanContext& context, const BenchmarkRu
         return output;
     }
 
+    VkPhysicalDeviceProperties device_properties{};
+    vkGetPhysicalDeviceProperties(context.physical_device(), &device_properties);
+    const uint64_t dispatch_limited_elements =
+        static_cast<uint64_t>(device_properties.limits.maxComputeWorkGroupCount[0]) * kWorkgroupSize;
     const uint64_t max_elements_u64 = config.max_buffer_bytes / static_cast<uint64_t>(sizeof(uint32_t));
     if (max_elements_u64 == 0U) {
         std::cerr << "Scratch buffer too small for scalar type width sweep experiment.\n";
         return output;
     }
 
-    const uint32_t max_elements =
-        static_cast<uint32_t>(std::min<uint64_t>(max_elements_u64, std::numeric_limits<uint32_t>::max()));
+    const uint32_t max_elements = static_cast<uint32_t>(std::min(
+        {max_elements_u64, dispatch_limited_elements, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())}));
     const std::vector<uint32_t> element_counts = make_element_counts(max_elements);
     if (element_counts.empty()) {
         std::cerr << "No legal element counts available for scalar type width sweep experiment.\n";

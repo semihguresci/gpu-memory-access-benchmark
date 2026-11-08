@@ -3,6 +3,7 @@
 
 #include "utils/buffer_utils.hpp"
 #include "utils/experiment_metrics.hpp"
+#include "utils/float_validation.hpp"
 #include "utils/layout_assert.hpp"
 #include "utils/vulkan_compute_utils.hpp"
 #include "vulkan_context.hpp"
@@ -168,8 +169,7 @@ void append_note(std::string& notes, const std::string& note) {
 }
 
 bool nearly_equal(float lhs, float rhs) {
-    const float scale = std::max({1.0F, std::fabs(lhs), std::fabs(rhs)});
-    return std::fabs(lhs - rhs) <= (kValidationEpsilon * scale);
+    return FloatValidation::nearly_equal(lhs, rhs, kValidationEpsilon);
 }
 
 LogicalParticle make_seed_particle(uint32_t index) {
@@ -587,6 +587,7 @@ double run_dispatch(VulkanContext& context, uint32_t particles, const SingleBuff
         for (uint32_t dispatch_index = 0U; dispatch_index < kDispatchCount; ++dispatch_index) {
             vkCmdDispatch(command_buffer, group_count, 1U, 1U);
         }
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -695,6 +696,7 @@ void run_variant_case(VulkanContext& context, const BenchmarkRunner& runner, Lay
                       << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant_name,
@@ -743,14 +745,18 @@ run_std430_std140_packed_experiment(VulkanContext& context, const BenchmarkRunne
         return output;
     }
 
+    VkPhysicalDeviceProperties device_properties{};
+    vkGetPhysicalDeviceProperties(context.physical_device(), &device_properties);
+    const uint64_t dispatch_limited_elements =
+        static_cast<uint64_t>(device_properties.limits.maxComputeWorkGroupCount[0]) * kWorkgroupSize;
     const uint64_t max_particles_u64 = config.max_buffer_bytes / static_cast<uint64_t>(kStd140StorageStrideBytes);
     if (max_particles_u64 == 0U) {
         std::cerr << "Scratch buffer too small for std430/std140/packed experiment.\n";
         return output;
     }
 
-    const uint32_t max_particles =
-        static_cast<uint32_t>(std::min<uint64_t>(max_particles_u64, std::numeric_limits<uint32_t>::max()));
+    const uint32_t max_particles = static_cast<uint32_t>(std::min(
+        {max_particles_u64, dispatch_limited_elements, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())}));
     const std::vector<uint32_t> particle_counts = make_particle_counts(max_particles);
     if (particle_counts.empty()) {
         std::cerr << "No legal particle counts available for std430/std140/packed experiment.\n";

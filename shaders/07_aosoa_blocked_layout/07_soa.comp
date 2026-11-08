@@ -34,15 +34,37 @@ void main() {
         return;
     }
 
-    float adv_x = vel_x[id] * dt[id];
-    float adv_y = vel_y[id] * dt[id];
-    float adv_z = vel_z[id] * dt[id];
-    pos_x[id] += adv_x;
-    pos_y[id] += adv_y;
-    pos_z[id] += adv_z;
-    aux0[id] += (adv_x * 0.5) + (adv_y * 0.25);
-    aux1[id] += adv_z * 0.75;
-    aux2[id] = (aux2[id] * 0.999) + (aux0[id] * 0.001);
-    aux3[id] += aux2[id] * 0.01;
-    mass[id] += 0.000001 + (aux1[id] * 0.0000001);
+    float px = pos_x[id];
+    float py = pos_y[id];
+    float pz = pos_z[id];
+    float m = mass[id];
+    float vx = vel_x[id];
+    float vy = vel_y[id];
+    float vz = vel_z[id];
+    float time_step = dt[id];
+    float a0 = aux0[id];
+    float a1 = aux1[id];
+    float a2 = aux2[id];
+    float a3 = aux3[id];
+
+    float adv_x = vx * time_step;
+    float adv_y = vy * time_step;
+    float adv_z = vz * time_step;
+    px += adv_x;
+    py += adv_y;
+    pz += adv_z;
+    a0 += (adv_x * 0.5) + (adv_y * 0.25);
+    a1 += adv_z * 0.75;
+    a2 = (a2 * 0.999) + (a0 * 0.001);
+    a3 += a2 * 0.01;
+    m += 0.000001 + (a1 * 0.0000001);
+
+    pos_x[id] = px;
+    pos_y[id] = py;
+    pos_z[id] = pz;
+    mass[id] = m;
+    aux0[id] = a0;
+    aux1[id] = a1;
+    aux2[id] = a2;
+    aux3[id] = a3;
 }

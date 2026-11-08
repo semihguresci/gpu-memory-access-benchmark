@@ -342,6 +342,13 @@ double run_dispatch_write_stage(VulkanContext& context, const SharedWriteResourc
                                 &resources.descriptor_set, 0U, nullptr);
         for (uint32_t dispatch_index = 0; dispatch_index < dispatch_count; ++dispatch_index) {
             vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+            if (dispatch_index + 1U < dispatch_count) {
+                const VkMemoryBarrier dependency{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT,
+                                                 VK_ACCESS_SHADER_WRITE_BIT};
+                vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0U, 1U, &dependency, 0U, nullptr, 0U,
+                                     nullptr);
+            }
         }
 
         VulkanComputeUtils::record_compute_write_to_transfer_read_barrier(command_buffer,
@@ -364,6 +371,8 @@ double run_readback_stage(VulkanContext& context, const SharedWriteResources& re
         const VkBufferCopy copy_region{0U, 0U, bytes};
         vkCmdCopyBuffer(command_buffer, resources.device_storage.buffer, resources.readback_staging.buffer, 1U,
                         &copy_region);
+        VulkanComputeUtils::record_transfer_write_to_host_read_barrier(command_buffer,
+                                                                       resources.readback_staging.buffer, bytes);
     });
 }
 
@@ -574,6 +583,8 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                 const bool correctness = upload_ok && dispatch_ok && readback_ok && data_ok;
 
                 std::string notes;
+                append_note(notes, "timing_scope=dispatches_and_dependencies");
+                append_note(notes, "inter_dispatch_dependencies=" + std::to_string(config.dispatch_count - 1U));
                 append_note(notes, "local_size_x=" + std::to_string(local_size_x));
                 append_note(notes, "group_count_x=" + std::to_string(group_count_x));
                 if (!upload_ok) {
@@ -599,6 +610,7 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                               << ", readback_ms=" << readback_ms << ", end_to_end_ms=" << end_to_end_ms.count()
                               << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
                 }
+                append_note(notes, "readback_scope=copy_and_host_visibility");
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = kExperimentId,
                     .variant = "contiguous_write_ls" + std::to_string(local_size_x),
@@ -709,6 +721,7 @@ LocalSizeSweepExperimentOutput run_local_size_sweep_experiment(VulkanContext& co
                               << ", readback_ms=" << readback_ms << ", end_to_end_ms=" << end_to_end_ms.count()
                               << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
                 }
+                append_note(notes, "readback_scope=copy_and_host_visibility");
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = kExperimentId,
                     .variant = "noop_ls" + std::to_string(local_size_x),

@@ -1,34 +1,70 @@
-# Experiment 06 Results: Aos Vs Soa
+# Experiment 06 Results: AoS vs SoA
 
-## Run Status
-- Benchmark status: latest `full_refresh_20260405` collection completed (`10/10` row correctness pass)
-- Test status: `ctest --test-dir build-tests-vs -C Release --output-on-failure` passed `37/37` after integration changes
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --label full_refresh_20260405`
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-05T13:50:31Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260405_135031Z_full_refresh_20260405.json)
-- Sweep coverage: `2` variants x current configured problem sizes
+## Run status and provenance
 
-## Key Measurements
-- All `2` benchmark cases are represented in the refreshed export.
-- At the largest tested `problem_size=1000000`, the fastest median GPU time came from `variant=soa` at `2.465888 ms`. Median GB/s: `19.466`. Median throughput: `405533422.443`.
+- Current export: **30/30 correctness checks passed**, 2 variants, 3 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `1820e56779051185878cb3a6a00823f6d38c5c7e21ba3c5bb609814fba9f23f2`.
 
-## Artifact Links
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [aos vs soa multi run summary](./results/tables/aos_vs_soa_multi_run_summary.csv)
-- [aos vs soa runs index](./results/tables/aos_vs_soa_runs_index.csv)
-- [aos vs soa status overview](./results/tables/aos_vs_soa_status_overview.csv)
-- [aos vs soa summary](./results/tables/aos_vs_soa_summary.csv)
-- [aos vs soa gbps vs size](./results/charts/aos_vs_soa_gbps_vs_size.png)
-- [aos vs soa gpu ms vs size](./results/charts/aos_vs_soa_gpu_ms_vs_size.png)
-- [benchmark summary](./results/charts/benchmark_summary.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "06_aos_vs_soa", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\06_aos_vs_soa\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:34:19.670615Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `6` |
+| row_count | `30` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- The fastest and slowest median GPU-time cases in the current focus set are separated by about `2751.14%`, so the sweep does show a large spread on this GPU.
+Exported configuration and metric definitions (all distinct values):
 
-## Limitations
-- Results come from one GPU and driver stack.
-- Reported GB/s values follow each experiment's own metric definition; compare them within an experiment before comparing them across experiments.
-- The refreshed report covers the current sweep only; different sizes, kernels, drivers, or GPUs may shift the ranking.
+| Row-note field | Recorded values |
+|---|---|
+| first_buffer_payload_bytes | 16777216, 2097152 |
+| gbps_basis | useful_field_payload |
+| gpu_time_scope | dispatch_and_host_visibility |
+| memory_heap_index | 1 |
+| memory_property_flags | 6 |
+| memory_type_index | 3 |
+
+## Key measurements
+
+All cases share the reported **problem_size=524288**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| aos | 1 | 524288 | 5 | 17.483584 | 29987444.222 | 1.439397 |
+| soa | 1 | 524288 | 5 | 1.331872 | 393647437.592 | 18.895077 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_113419Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_113419Z_remaining_review_fixes.json).
+- [aos_vs_soa_gbps_vs_size.png](./results/charts/aos_vs_soa_gbps_vs_size.png)
+- [aos_vs_soa_gpu_ms_vs_size.png](./results/charts/aos_vs_soa_gpu_ms_vs_size.png)
+- [benchmark_summary.png](./results/charts/benchmark_summary.png)
+- [aos_vs_soa_multi_run_summary.csv](./results/tables/aos_vs_soa_multi_run_summary.csv)
+- [aos_vs_soa_runs_index.csv](./results/tables/aos_vs_soa_runs_index.csv)
+- [aos_vs_soa_status_overview.csv](./results/tables/aos_vs_soa_status_overview.csv)
+- [aos_vs_soa_summary.csv](./results/tables/aos_vs_soa_summary.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- Active field operations are matched, but physical memory transactions require compiler or profiler evidence.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

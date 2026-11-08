@@ -1,38 +1,70 @@
 # Experiment 31 Results: Subgroup Scan Variants
 
-## Run Status
-- Benchmark status: latest `20260428_192000Z` collection completed (`30/30` row correctness pass across `6` benchmark cases)
-- Test status: not run in this refresh
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --size 1G`
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-28T19:20:00Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260428_192000Z_2.json)
-- Sweep coverage: `2` variants x `3` `items_per_thread` settings at the current configured problem size (`134217728` elements)
+## Run status and provenance
 
-## Key Measurements
-- All `6` benchmark cases are represented in the refreshed export.
-- The fastest median GPU time came from `shared_block_scan_items_1` at `51.356608 ms`. Median GB/s: `20.907569`. Median throughput: `2613446121.675`.
-- `subgroup_block_scan_items_1` stayed close at `51.679360 ms`, which is `0.993755x` of the shared-block-scan speedup baseline for that setting.
-- At `items_per_thread=4`, the subgroup path was slower: `3920.248672 ms` versus `3572.119616 ms`, or `0.911197x` of the shared baseline throughput.
-- At `items_per_thread=8`, the subgroup path was also slower: `1175.649920 ms` versus `1164.463904 ms`, or `0.990485x` of the shared baseline throughput.
-- The largest p95-to-median GPU-time ratio in the current stability table is `1.126203` for `subgroup_block_scan_items_4`.
+- Current export: **30/30 correctness checks passed**, 6 variants, 1 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `10caa49476378935ba15105f278717ac3367bc3454a753632c2e83dc71d9130a`.
 
-## Artifact Links
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [subgroup scan summary](./results/tables/subgroup_scan_variants_summary.csv)
-- [subgroup scan relative](./results/tables/subgroup_scan_variants_relative.csv)
-- [subgroup scan stability](./results/tables/subgroup_scan_variants_stability.csv)
-- [subgroup scan gpu ms](./results/charts/subgroup_scan_gpu_ms.png)
-- [subgroup scan speedup](./results/charts/subgroup_scan_speedup.png)
-- [subgroup scan stability](./results/charts/subgroup_scan_stability.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "31_subgroup_scan_variants", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\31_subgroup_scan_variants\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:43:46.005159Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `6` |
+| row_count | `30` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- On this GPU and with the current kernels, the subgroup-assisted scan path does not beat the shared-block baseline in the current sweep.
-- The largest performance loss appears at `items_per_thread=4`, while `items_per_thread=1` is effectively near-parity between the two implementations.
+Exported configuration and metric definitions (all distinct values):
 
-## Limitations
-- Results come from one GPU and driver stack.
-- The current sweep covers one configured problem size only, so it does not show whether the ranking changes across different total scan lengths.
-- This report reflects the current `items_per_thread` variants only; it does not isolate whether the large slowdown at `4` and `8` comes from subgroup behavior itself or from the broader structure of those kernel variants.
+| Row-note field | Recorded values |
+|---|---|
+| gpu_time_scope | kernel_work_and_host_visibility_dependency |
+| payload_bytes_per_element | 8 |
+| subgroup_size | 32 |
+
+## Key measurements
+
+All cases share the reported **problem_size=4194304**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| shared_block_scan_items_1 | 1 | 4194304 | 5 | 1.501568 | 2793282755.093 | 22.346262 |
+| shared_block_scan_items_4 | 1 | 4194304 | 5 | 109.249824 | 38391860.476 | 0.307135 |
+| shared_block_scan_items_8 | 1 | 4194304 | 5 | 36.124576 | 116106663.785 | 0.928853 |
+| subgroup_block_scan_items_1 | 1 | 4194304 | 5 | 1.501152 | 2794056831.020 | 22.352455 |
+| subgroup_block_scan_items_4 | 1 | 4194304 | 5 | 109.099584 | 38444729.542 | 0.307558 |
+| subgroup_block_scan_items_8 | 1 | 4194304 | 5 | 36.118208 | 116127134.547 | 0.929017 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_114346Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_114346Z_remaining_review_fixes.json).
+- [subgroup_scan_gpu_ms.png](./results/charts/subgroup_scan_gpu_ms.png)
+- [subgroup_scan_speedup.png](./results/charts/subgroup_scan_speedup.png)
+- [subgroup_scan_stability.png](./results/charts/subgroup_scan_stability.png)
+- [subgroup_scan_variants_relative.csv](./results/tables/subgroup_scan_variants_relative.csv)
+- [subgroup_scan_variants_stability.csv](./results/tables/subgroup_scan_variants_stability.csv)
+- [subgroup_scan_variants_summary.csv](./results/tables/subgroup_scan_variants_summary.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- Scan scope is block-local, with portable explicit subgroup-to-logical indexing. Items per thread also change block size and data mapping; this is not a full-array scan.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

@@ -17,8 +17,8 @@ layout(std430, binding = 0) readonly buffer InputBuffer {
     uint values[];
 } input_buffer;
 
-// Contract: one per-invocation aggregate result. The host compares this output
-// across variants to ensure the subgroup path matches the shared baseline.
+// Contract: every invocation receives its workgroup's sum plus 17 times the
+// number of odd inputs. This is independent of subgroup membership/order.
 layout(std430, binding = 1) buffer OutputBuffer {
     uint values[];
 } output_buffer;
@@ -34,36 +34,44 @@ shared uint shared_values[256];
 shared uint shared_counts[256];
 
 uint shared_baseline_result(uint local_index, uint input_value) {
-    const uint subgroup_size = gl_SubgroupSize;
-    const uint lane_in_subgroup = gl_SubgroupInvocationID;
     shared_values[local_index] = input_value;
     shared_counts[local_index] = ((input_value & 1u) != 0u) ? 1u : 0u;
     barrier();
 
-    // Shared-memory baseline: reduce cooperatively inside each subgroup-sized
-    // region. This keeps the arithmetic volume close to the subgroup intrinsic
-    // path while still measuring explicit shared-memory coordination.
-    for (uint stride = 1u; stride < subgroup_size; stride <<= 1u) {
-        const uint partner_lane = lane_in_subgroup + stride;
-        if ((lane_in_subgroup % (stride << 1u)) == 0u && partner_lane < subgroup_size) {
-            const uint partner_index = local_index + stride;
-            shared_values[local_index] += shared_values[partner_index];
-            shared_counts[local_index] += shared_counts[partner_index];
+    for (uint stride = gl_WorkGroupSize.x / 2u; stride > 0u; stride >>= 1u) {
+        if (local_index < stride) {
+            shared_values[local_index] += shared_values[local_index + stride];
+            shared_counts[local_index] += shared_counts[local_index + stride];
         }
         barrier();
     }
 
-    const uint subgroup_base = gl_SubgroupID * subgroup_size;
-    const uint subgroup_sum = shared_values[subgroup_base];
-    const uint active_count = shared_counts[subgroup_base];
-    return subgroup_sum + (active_count * 17u);
+    return shared_values[0] + (shared_counts[0] * 17u);
 }
 
 uint subgroup_intrinsic_result(uint input_value) {
     const uint subgroup_sum = subgroupAdd(input_value);
     const uvec4 ballot_mask = subgroupBallot((input_value & 1u) != 0u);
     const uint active_count = subgroupBallotBitCount(ballot_mask);
-    return subgroup_sum + (active_count * 17u);
+    if (subgroupElect()) {
+        shared_values[gl_SubgroupID] = subgroup_sum;
+        shared_counts[gl_SubgroupID] = active_count;
+    }
+    barrier();
+
+    // Only membership-independent aggregates cross subgroup boundaries. The
+    // arrays cover up to 256 subgroups and gl_NumSubgroups includes partials.
+    if (gl_LocalInvocationIndex == 0u) {
+        uint workgroup_sum = 0u;
+        uint workgroup_count = 0u;
+        for (uint group = 0u; group < gl_NumSubgroups; ++group) {
+            workgroup_sum += shared_values[group];
+            workgroup_count += shared_counts[group];
+        }
+        shared_values[0] = workgroup_sum + (workgroup_count * 17u);
+    }
+    barrier();
+    return shared_values[0];
 }
 
 void main() {

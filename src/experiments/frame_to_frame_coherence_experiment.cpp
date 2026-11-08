@@ -27,7 +27,6 @@ constexpr uint32_t kFramesPerIteration = 8U;
 constexpr uint32_t kTargetElementCount = 67108864U;
 constexpr uint32_t kSourceSeed = 0x31415926U;
 constexpr uint32_t kModeRandomSeed = 0x9E3779B9U;
-constexpr uint32_t kOutputSentinel = 0xDEADBEEFU;
 constexpr uint32_t kHashMul0 = 0x7FEB352DU;
 constexpr uint32_t kHashMul1 = 0x846CA68BU;
 constexpr uint32_t kCoherentFrameShift = 17U;
@@ -169,10 +168,10 @@ bool create_buffer_resources(VulkanContext& context, uint32_t max_elements, Buff
         return false;
     }
 
-    if (!create_buffer_resource(context.physical_device(), context.device(), compute_span_bytes(max_elements),
-                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                out_resources.output_buffer)) {
+    if (!create_buffer_resource(
+            context.physical_device(), context.device(), compute_span_bytes(max_elements) * kFramesPerIteration,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, out_resources.output_buffer)) {
         std::cerr << "Failed to create frame coherence output buffer.\n";
         destroy_buffer_resource(context.device(), out_resources.source_buffer);
         return false;
@@ -217,7 +216,7 @@ void update_descriptor_set(VulkanContext& context, const BufferResources& buffer
     const VkDescriptorBufferInfo output_info{buffers.output_buffer.buffer, 0U, buffers.output_buffer.size};
     // Shader binding contract:
     //   0 -> stable source dataset reused across frames
-    //   1 -> current-frame outputs for each logical invocation
+    //   1 -> eight disjoint output ranges, one per measured frame
     VulkanComputeUtils::update_descriptor_set_buffers(context.device(), descriptor_set,
                                                       {
                                                           VulkanComputeUtils::DescriptorBufferBindingUpdate{
@@ -359,14 +358,18 @@ double run_dispatch_sequence(VulkanContext& context, const PipelineResources& pi
                                static_cast<uint32_t>(sizeof(constants)), &constants);
             vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
             if (frame + 1U < kFramesPerIteration) {
+                // Serialize the frame sequence intentionally. Outputs are
+                // disjoint; execution ordering defines temporal source reuse.
                 record_compute_barrier(command_buffer);
             }
         }
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
 void record_case_notes(std::string& notes, const VariantDescriptor& variant, uint32_t element_count,
-                       bool correctness_pass, bool dispatch_ok) {
+                       const BufferResources& buffers, std::size_t scratch_size_bytes, bool correctness_pass,
+                       bool dispatch_ok) {
     append_note(notes, "coherence_mode=" + std::string(variant.variant_name));
     append_note(notes, "locality_profile=" + std::string(variant.locality_profile));
     append_note(notes, "element_count=" + std::to_string(element_count));
@@ -374,6 +377,26 @@ void record_case_notes(std::string& notes, const VariantDescriptor& variant, uin
     append_note(notes, "coherent_shift=" + std::to_string(kCoherentFrameShift));
     append_note(notes, "block_lane_count=" + std::to_string(kBlockLaneCount));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
+    append_note(notes, "scratch_size_bytes=" + std::to_string(scratch_size_bytes));
+    append_note(notes, "resident_buffer_payload_bytes=" +
+                           std::to_string(buffers.source_buffer.size + buffers.output_buffer.size));
+    append_note(notes, "allocated_buffer_bytes=" + std::to_string(buffers.source_buffer.allocation_size +
+                                                                  buffers.output_buffer.allocation_size));
+    append_note(notes, "source_memory_type=" + std::to_string(buffers.source_buffer.memory_type_index));
+    append_note(notes, "source_heap=" + std::to_string(buffers.source_buffer.heap_index));
+    append_note(notes, "source_memory_flags=" + std::to_string(buffers.source_buffer.memory_properties));
+    append_note(notes, "output_memory_type=" + std::to_string(buffers.output_buffer.memory_type_index));
+    append_note(notes, "output_heap=" + std::to_string(buffers.output_buffer.heap_index));
+    append_note(notes, "output_memory_flags=" + std::to_string(buffers.output_buffer.memory_properties));
+    append_note(notes, "active_source_bytes=" + std::to_string(compute_span_bytes(element_count)));
+    append_note(notes,
+                "active_output_bytes=" + std::to_string(compute_span_bytes(element_count) * kFramesPerIteration));
+    append_note(notes, "oracle=all_eight_frame_outputs_each_iteration");
+    append_note(notes, "frame_outputs=disjoint");
+    append_note(notes, "inter_frame_barriers=7");
+    append_note(notes, "gbps_mode=shader_payload_bytes");
+    append_note(notes, "payload_formula=element_count*8_frames*(4_byte_read+4_byte_write)");
+    append_note(notes, "locality_controls=temporal_and_spatial_access_and_collision_pattern_vary");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
     }
@@ -384,7 +407,7 @@ void record_case_notes(std::string& notes, const VariantDescriptor& variant, uin
 
 bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const PipelineResources& pipeline_resources,
               const BufferResources& buffers, const VariantDescriptor& variant, uint32_t element_count,
-              FrameToFrameCoherenceExperimentOutput& output, bool verbose_progress) {
+              FrameToFrameCoherenceExperimentOutput& output, const FrameToFrameCoherenceExperimentConfig& config) {
     const auto* source_values = static_cast<const uint32_t*>(buffers.source_mapped_ptr);
     auto* output_values = static_cast<uint32_t*>(buffers.output_mapped_ptr);
     if (source_values == nullptr || output_values == nullptr) {
@@ -392,10 +415,13 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         return false;
     }
 
-    const uint32_t last_frame = kFramesPerIteration - 1U;
-    std::vector<uint32_t> reference(element_count, 0U);
-    for (uint32_t index = 0U; index < element_count; ++index) {
-        reference[index] = expected_output_value(source_values, index, last_frame, element_count, variant.mode);
+    const std::size_t output_count = static_cast<std::size_t>(element_count) * kFramesPerIteration;
+    std::vector<uint32_t> reference(output_count, 0U);
+    for (uint32_t frame = 0U; frame < kFramesPerIteration; ++frame) {
+        for (uint32_t index = 0U; index < element_count; ++index) {
+            reference[static_cast<std::size_t>(frame) * element_count + index] =
+                expected_output_value(source_values, index, frame, element_count, variant.mode);
+        }
     }
 
     const uint64_t payload_bytes =
@@ -403,16 +429,17 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
 
     std::vector<double> dispatch_samples;
     dispatch_samples.reserve(static_cast<std::size_t>(std::max(0, runner.timed_iterations())));
-    const bool source_valid = validate_source_values(source_values, element_count);
 
     for (int warmup = 0; warmup < runner.warmup_iterations(); ++warmup) {
-        std::fill_n(output_values, element_count, kOutputSentinel);
+        std::transform(reference.begin(), reference.end(), output_values, [](uint32_t value) {
+            return ~value;
+        });
         const double dispatch_ms = run_dispatch_sequence(context, pipeline_resources, element_count, variant.mode);
-        if (verbose_progress) {
+        if (config.verbose_progress) {
             const bool dispatch_ok = std::isfinite(dispatch_ms);
-            bool correctness_pass = dispatch_ok && source_valid;
+            bool correctness_pass = dispatch_ok && validate_source_values(source_values, element_count);
             if (correctness_pass) {
-                correctness_pass = std::equal(output_values, output_values + element_count, reference.begin());
+                correctness_pass = std::equal(reference.begin(), reference.end(), output_values);
             }
             std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1U) << "/" << runner.warmup_iterations()
                       << " variant=" << variant.variant_name << ", element_count=" << element_count
@@ -423,21 +450,25 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
 
     for (int iteration = 0; iteration < runner.timed_iterations(); ++iteration) {
         const auto start = std::chrono::high_resolution_clock::now();
-        std::fill_n(output_values, element_count, kOutputSentinel);
+        std::transform(reference.begin(), reference.end(), output_values, [](uint32_t value) {
+            return ~value;
+        });
         const double dispatch_ms = run_dispatch_sequence(context, pipeline_resources, element_count, variant.mode);
         const auto end = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double, std::milli> end_to_end_ms = end - start;
 
         const bool dispatch_ok = std::isfinite(dispatch_ms);
-        const bool correctness_pass =
-            dispatch_ok && source_valid && std::equal(output_values, output_values + element_count, reference.begin());
+        const bool correctness_pass = dispatch_ok && validate_source_values(source_values, element_count) &&
+                                      std::equal(reference.begin(), reference.end(), output_values);
         output.all_points_correct = output.all_points_correct && correctness_pass;
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
-        record_case_notes(notes, variant, element_count, correctness_pass, dispatch_ok);
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
+        record_case_notes(notes, variant, element_count, buffers, config.scratch_size_bytes, correctness_pass,
+                          dispatch_ok);
 
-        if (verbose_progress) {
+        if (config.verbose_progress) {
             std::cout << "[" << kExperimentId << "] timed " << (iteration + 1U) << "/" << runner.timed_iterations()
                       << " variant=" << variant.variant_name << ", element_count=" << element_count
                       << ", dispatch_ms=" << dispatch_ms << ", end_to_end_ms=" << end_to_end_ms.count()
@@ -489,8 +520,10 @@ run_frame_to_frame_coherence_experiment(VulkanContext& context, const BenchmarkR
 
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(context.physical_device(), &properties);
-    const uint32_t max_elements =
-        determine_logical_count(config.max_buffer_bytes, properties.limits.maxComputeWorkGroupCount[0]);
+    const uint32_t max_elements = determine_logical_count(
+        std::min(config.max_buffer_bytes,
+                 static_cast<std::size_t>(properties.limits.maxStorageBufferRange) / kFramesPerIteration),
+        properties.limits.maxComputeWorkGroupCount[0]);
     if (max_elements == 0U) {
         std::cerr << "Scratch buffer too small for frame-to-frame coherence experiment.\n";
         output.all_points_correct = false;
@@ -501,7 +534,7 @@ run_frame_to_frame_coherence_experiment(VulkanContext& context, const BenchmarkR
         std::cout << "[" << kExperimentId << "] shader: " << shader_path << "\n";
         std::cout << "[" << kExperimentId << "] max_elements=" << max_elements
                   << ", source_span_bytes=" << compute_span_bytes(max_elements)
-                  << ", output_span_bytes=" << compute_span_bytes(max_elements)
+                  << ", output_span_bytes=" << compute_span_bytes(max_elements) * kFramesPerIteration
                   << ", frames_per_iteration=" << kFramesPerIteration
                   << ", warmup_iterations=" << runner.warmup_iterations()
                   << ", timed_iterations=" << runner.timed_iterations() << "\n";
@@ -534,8 +567,7 @@ run_frame_to_frame_coherence_experiment(VulkanContext& context, const BenchmarkR
     const std::vector<uint32_t> problem_sizes = build_problem_sizes(max_elements);
     for (const auto& variant : kVariantDescriptors) {
         for (uint32_t element_count : problem_sizes) {
-            if (!run_case(context, runner, pipeline, buffers, variant, element_count, output,
-                          config.verbose_progress)) {
+            if (!run_case(context, runner, pipeline, buffers, variant, element_count, output, config)) {
                 output.all_points_correct = false;
             }
         }

@@ -8,12 +8,16 @@ This repository is a Vulkan compute benchmarking project focused on one question
 The project is positioned as results-backed engineering work. It studies layout, coalescing, locality, bandwidth saturation, and shared-memory staging with reproducible Vulkan compute experiments and artifact-driven reports.
 
 ## Current Scope
-The repository currently tracks `45` enabled Vulkan compute experiments:
+The repository currently tracks `48` enabled Vulkan compute experiments:
 - Experiments `01-25`: core benchmark foundations, layout studies, access patterns, on-chip memory, execution-model probes, and parallel primitives.
 - Experiments `26-33`: priority memory-system extensions, including warp alignment, cache thrashing, heap placement, bank conflicts, subgroup variants, and 2D locality.
-- Experiments `34-45`: advanced rendering and systems investigations, including radix sort, BVH layout, culling, tiled light assignment, persistent queues, subgroup operations, async overlap, ray-friendly layouts, GPU-driven pipeline blocks, and cross-GPU reproducibility.
+- Experiments `34-48`: advanced rendering and systems investigations, including radix sort, BVH layout, culling, tiled light assignment, persistent queues, subgroup operations, async overlap, ray-friendly layouts, GPU-driven pipeline blocks, cross-GPU reproducibility, dependent-load latency, access-pattern factorials, and buffer-versus-image representations.
 
 Canonical experiment metadata lives in [`config/experiment_manifest.json`](./config/experiment_manifest.json). Each experiment owns its local notes and artifacts under `experiments/<id>/`, including `README.md`, `plan.md`, `results.md`, generated `results/` charts/tables, and archived `runs/` when data has been collected.
+
+The repository tracks source, scripts, and Markdown reports. Generated `results/`
+and archived `runs/` directories are ignored by Git; collect data and regenerate
+artifacts locally with the commands below.
 
 ## Problem
 - GPUs are frequently bandwidth-bound rather than ALU-bound.
@@ -32,45 +36,85 @@ cmake --build --preset tests-vs-release --target gpu_memory_layout_experiments
 Run one experiment and collect the raw benchmark JSON into its experiment-local run archive:
 
 ```powershell
-python scripts/run_experiment_data_collection.py --experiment 06_aos_vs_soa --iterations 5 --warmup 2
+python scripts/run_experiment_data_collection.py --experiment 06_aos_vs_soa --binary build-tests-vs/Release/gpu_memory_layout_experiments.exe --iterations 5 --warmup 2
 ```
 
 Regenerate derived tables and charts for an experiment:
 
 ```powershell
 python scripts/generate_experiment_artifacts.py --experiment 06_aos_vs_soa
+python scripts/refresh_experiment_reports.py --experiment 06_aos_vs_soa
 ```
+
+Artifact generation can also use existing run archives. Experiments 46–48 rebuild
+both tables and charts when the current `benchmark_results.json` is absent.
 
 Useful flags:
 - `--size 1G` overrides the manifest default scratch size.
+- `--size-preset {tiny,small,medium,large,xlarge}` expands to 4M/32M/128M/256M/1G (mutually exclusive with `--size`).
+- `--device 0` selects a physical device by enumeration index; `--device geforce` matches a deviceName substring (case-insensitive; empty selects the first compute-capable device).
+- `--runs 3` performs independent benchmark invocations and archives each run with a `run<index>` label suffix.
 - `--validation` enables Vulkan validation layers for the benchmark run.
 - `--verbose-progress` enables detailed process logs; default runs stay quiet.
 - `--binary <path>` pins the benchmark executable when a stale build path would otherwise be selected.
 
 ## Results Snapshot
-| Experiment | Improvement | Current evidence |
+The current reports use measurement revision `2026-11-08-remaining-review-fixes`.
+The latest collection passed **6,105 of 6,105 timed rows across all 48 experiments**.
+All 48 reports were refreshed, with **192 derived tables and 191 charts** verified
+against their recorded source and tool hashes. Reports identify the exact raw
+export, matching archive, binary, source-tree, and shader-bundle provenance.
+
+Older archived measurements use earlier workload, synchronization, validation, or
+byte-accounting definitions and remain separate from the current revision. See
+the [review fixes and validation record](./docs/experiment_integrity_fixes.md).
+
+| Experiment | Measured comparison | Current evidence |
 | --- | --- | --- |
-| SoA vs AoS | `+2742%` GPU-time speedup (`28.42x` faster) and `+2032%` effective-bandwidth gain for `SoA` | Experiment 06, `64 MiB`, `1,000,000` elements |
-| Coalesced vs Strided | `+1298%` to `+8808%` GPU-time speedup for coalesced access depending on stride | Experiment 11, stride sweep `1, 2, 4, 8, 16, 32, 64`, `128 MiB` |
-| Cache line utilization / reuse | Bounded reuse is about `1.32x` faster than full-span replay | Experiment 14, `32 MiB` locality study |
-| Memory bandwidth saturation | Read-only traffic sustains about `899 GB/s` from `96-512 MiB`; read-write copy sustains about `419 GB/s` | Experiment 15 saturation sweep |
-| Shared memory vs global memory | Current tiled kernel is `0.65%-2.85%` slower than direct global access | Experiment 16, reuse-radius sweep |
+| SoA vs AoS | Matching eight field reads and four field stores with a common 48-byte payload | [Experiment 06 results](./experiments/06_aos_vs_soa/results.md) |
+| Coalesced vs Strided | Strides `1, 2, 4, 8, 16, 32, 64`; physical span also changes | [Experiment 11 results](./experiments/11_coalesced_vs_strided/results.md) |
+| Read reuse | Invocation-index schedules over repeated source values; temporal execution order is not guaranteed | [Experiment 14 results](./experiments/14_read_reuse_cache_locality/results.md) |
+| Memory bandwidth sweep | Read/write/copy requested-byte throughput over the configured size range | [Experiment 15 results](./experiments/15_bandwidth_saturation_sweep/results.md) |
+| Shared memory | Direct versus tiled stencil at matching reuse radius | [Experiment 16 results](./experiments/16_shared_memory_tiling/results.md) |
 
 ## Methodology
 | Dimension | Current setup |
 | --- | --- |
-| GPU | Desktop: `NVIDIA GeForce RTX 2080 SUPER` (`Vulkan 1.4.325`, driver `2480242688`) |
+| GPU | Desktop: `NVIDIA GeForce RTX 2080 SUPER` (`Vulkan 1.4.341`, NVIDIA driver `610.88`) |
 | Mobile track | `Adreno` validation is planned as a cross-GPU extension, not yet part of the measured baseline |
 | Measurement | GPU timestamp queries, median GPU time as the primary metric, `p95` for stability |
-| Data sizes | `32 MiB`, `64 MiB`, `128 MiB`, and `512 MiB` depending on the experiment |
+| Current refresh | `32 MiB` total scratch per experiment, except experiments 34, 47, and 48 at `128 MiB`; five timed iterations and two warmups |
 | Outputs | Raw JSON exports, CSV summaries, PNG charts, and per-experiment `results.md` reports |
+
+## Validation
+As of the 2026-11-08 review, the Release build passes **57 CTest cases** (50 unit
+and seven integration cases) and **74 Python tests**. One integration case runs
+a **24-experiment GPU smoke matrix**; the full 48-experiment collection above is
+separate run evidence. The modified production translation units pass the required
+GCC warning checks, and changed code passes the repository clang-tidy checks.
+
+After configuring the test preset, build and run the automated suites:
+
+```powershell
+cmake --build --preset tests-vs-release --target gpu_memory_layout_tests
+ctest --test-dir build-tests-vs -C Release --output-on-failure
+python -m unittest discover -s scripts/tests -v
+python -m unittest discover -s tests/scripts -v
+```
+
+GPU-dependent tests require a usable Vulkan device and timestamp support. The
+[test coverage map](./docs/tests/test_coverage.md) describes skip conditions,
+regressions, and remaining coverage limits. The
+[review record](./docs/experiment_integrity_fixes.md#remaining-review-fixes)
+documents descriptor-limit guards, fresh-output validation, synchronization,
+traffic accounting, and archive-only artifact checks.
 
 ## Experiment Catalog
 | Track | Experiments | Focus |
 | --- | --- | --- |
 | Core | `01-25` | Benchmark foundations, memory layout, access patterns, cache behavior, shared memory, synchronization, and parallel primitives |
 | Extension | `26-33` | Warp alignment, cache thrashing, heap placement, bank conflicts, subgroup primitive variants, and 2D locality |
-| Advanced | `34-45` | Sorting, rendering data structures, culling, tiled assignment, persistent queues, async overlap, GPU-driven blocks, and cross-GPU comparison |
+| Advanced | `34-48` | Sorting, rendering data structures, culling, tiled assignment, persistent queues, async overlap, GPU-driven blocks, dependent-load latency, access-pattern factorials, buffer-versus-image representations, and cross-GPU comparison |
 
 Representative enabled studies:
 
@@ -84,33 +128,37 @@ Representative enabled studies:
 | Enabled | Warp-level coalescing alignment | Aligned vs misaligned contiguous accesses |
 | Enabled | Cache thrashing | Random vs sequential working sets |
 | Enabled | Radix Sort on GPU | Multi-pass key sorting and digit-width tradeoffs |
-| Enabled | BVH Node Layout | Compact versus padded node storage and traversal locality |
+| Enabled | BVH Node Layout | Compact versus padded storage in a flat node-access proxy |
 | Enabled | GPU-Driven Pipeline Blocks | Staged versus fused compute pipeline building blocks |
 | Enabled | Cross-GPU Reproducibility | Deterministic probes for cross-run and cross-GPU comparison |
+| Enabled | Dependent Load Latency | Pointer-chase chains separating latency from memory-level parallelism |
+| Enabled | Block Reorder Factorial | 2x2 factorial over block order and within-block lane order with residency controls |
+| Enabled | Buffer Vs Image Representation | Same 2D dataset across flat buffer layouts and storage/sampled image paths |
 
 Full plan indexes:
 - [Core Experiment Plans Index](./docs/core_experiment_plans_index.md)
 - [Advanced Investigation Plans Index](./docs/advanced_investigation_plans_index.md)
 
-## Key Findings
-- Coalesced access is the dominant good-path baseline. The first loss of coalescing causes the largest collapse in effective throughput.
-- `SoA` is the correct default layout for field-wise access on the current workload. `AoS` wastes bandwidth badly.
-- Cache-friendly bounded reuse materially outperforms full-span replay, even without hardware counters.
-- Shared memory is not automatically faster. The current staging kernel does more work without repaying that overhead.
-- Size sweeps matter. Small transfers do not represent the sustained bandwidth region.
+## Reading the Results
+- Layout comparisons keep active field operations constant; physical transaction counts still require hardware evidence.
+- GPU time, logical elements, and estimated/requested bytes are separate quantities; each report documents its scope.
+- Experiment 22 GB/s estimates source-level storage-buffer requests, including per-invocation carry loads; it does not measure physical DRAM traffic.
+- Device comparisons retain validation mode, warmup count, and timed-iteration count so different run settings are not pooled.
+- Shared-memory and register studies keep useful work constant. Source declarations alone do not establish occupancy or spills.
+- Actual allocation flags and device limits matter; host-visible memory does not necessarily identify a distinct heap.
+- The current small-size, single-GPU refresh is exploratory. Larger sweeps and additional devices are needed for sustained-bandwidth and portability conclusions.
 
 ## Visuals
-Current graphs:
-- [AoS vs SoA GB/s chart](./experiments/06_aos_vs_soa/results/charts/aos_vs_soa_gbps_vs_size.png)
-- [Coalesced vs Strided slowdown chart](./experiments/11_coalesced_vs_strided/results/charts/coalesced_vs_strided_slowdown_vs_stride_1.png)
-- [Bandwidth saturation GB/s chart](./experiments/15_bandwidth_saturation_sweep/results/charts/bandwidth_saturation_gbps_vs_size.png)
-- [Shared memory vs direct-global speedup chart](./experiments/16_shared_memory_tiling/results/charts/shared_memory_tiling_speedup_vs_direct.png)
+Charts are generated locally in `experiments/<id>/results/charts/`. They are
+ignored by Git, so a fresh clone needs data collection and artifact generation
+before those PNGs are available. Example outputs:
 
-![AoS vs SoA GB/s](./experiments/06_aos_vs_soa/results/charts/aos_vs_soa_gbps_vs_size.png)
-
-![Coalesced vs Strided Slowdown](./experiments/11_coalesced_vs_strided/results/charts/coalesced_vs_strided_slowdown_vs_stride_1.png)
-
-![Bandwidth Saturation](./experiments/15_bandwidth_saturation_sweep/results/charts/bandwidth_saturation_gbps_vs_size.png)
+| Experiment and report | Generated chart filename |
+| --- | --- |
+| [AoS vs SoA](./experiments/06_aos_vs_soa/results.md) | `aos_vs_soa_gbps_vs_size.png` |
+| [Coalesced vs Strided](./experiments/11_coalesced_vs_strided/results.md) | `coalesced_vs_strided_slowdown_vs_stride_1.png` |
+| [Bandwidth saturation](./experiments/15_bandwidth_saturation_sweep/results.md) | `bandwidth_saturation_gbps_vs_size.png` |
+| [Shared memory vs direct-global](./experiments/16_shared_memory_tiling/results.md) | `shared_memory_tiling_speedup_vs_direct.png` |
 
 Profiler screenshots to add:
 - Warp-level alignment capture: aligned vs misaligned coalescing on the same warp-sized load.
@@ -132,6 +180,8 @@ What it wraps:
 - artifact regeneration through `scripts/generate_experiment_artifacts.py`
 
 The GUI reads `config/experiment_manifest.json`, lets you multi-select experiments, streams live logs, and can stop the active process tree on Windows.
+Its **Artifacts Only** action works from existing logs without requiring a benchmark
+binary or valid benchmark iteration settings.
 
 ## Engineering Insight
 ### Why coalescing matters
@@ -151,3 +201,5 @@ Poor coalescing is the memory-side equivalent of wasted SIMD efficiency. Branch 
 - [Core Experiment Plans Index](./docs/core_experiment_plans_index.md)
 - [Advanced Investigation Plans Index](./docs/advanced_investigation_plans_index.md)
 - [Advanced Investigations Roadmap](./docs/advanced_investigations_roadmap.md)
+- [Review Fixes and Validation Record](./docs/experiment_integrity_fixes.md)
+- [Test Coverage](./docs/tests/test_coverage.md)

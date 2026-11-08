@@ -20,6 +20,7 @@ namespace {
 
 constexpr const char* kExperimentId = "17_tile_size_sweep";
 constexpr uint32_t kKernelRadius = 16U;
+constexpr uint32_t kMinTileSize = 8U;
 constexpr uint32_t kMaxTileSize = 64U;
 constexpr uint32_t kWorkgroupMultiple = kMaxTileSize;
 constexpr uint32_t kCenterOffset = kKernelRadius;
@@ -154,7 +155,8 @@ CountResolution determine_logical_count(std::size_t max_buffer_bytes, uint32_t m
 
     const uint64_t source_limited_count = source_capacity_elements - (2U * kKernelRadius);
     const uint64_t output_limited_count = static_cast<uint64_t>(max_buffer_bytes) / sizeof(uint32_t);
-    const uint64_t dispatch_limited_count = static_cast<uint64_t>(max_dispatch_groups_x) * kWorkgroupMultiple;
+    // Every variant uses the same count; the smallest tile launches the most workgroups.
+    const uint64_t dispatch_limited_count = static_cast<uint64_t>(max_dispatch_groups_x) * kMinTileSize;
     const uint64_t effective_count = std::min({source_limited_count, output_limited_count, dispatch_limited_count,
                                                static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())});
     if (effective_count < kWorkgroupMultiple) {
@@ -412,6 +414,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& resources, 
         vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -531,6 +534,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
                       << ", correctness=" << (correctness_pass ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant_name,

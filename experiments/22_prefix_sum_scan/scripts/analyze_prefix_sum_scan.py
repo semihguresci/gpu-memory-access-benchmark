@@ -5,9 +5,19 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime, timezone
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    latest_compatible_run,
+    select_compatible_runs,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "22_prefix_sum_scan"
 BYTES_PER_ELEMENT = 4.0
@@ -36,9 +46,7 @@ def _parse_iso8601(value: str) -> datetime | None:
 
 def _latest_run_path(runs_dir: Path) -> Path | None:
     candidates = sorted(path for path in runs_dir.rglob("*.json") if path.is_file()) if runs_dir.exists() else []
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+    return latest_compatible_run(candidates)
 
 
 def _load_payload(input_path: Path) -> dict:
@@ -47,7 +55,7 @@ def _load_payload(input_path: Path) -> dict:
 
 def _load_frame(input_path: Path) -> tuple[pd.DataFrame, dict]:
     payload = _load_payload(input_path)
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, EXPERIMENT_ID, input_path)
     if not isinstance(rows, list) or not rows:
         raise ValueError("Input benchmark JSON has no rows[] payload.")
 
@@ -75,6 +83,11 @@ def _load_frame(input_path: Path) -> tuple[pd.DataFrame, dict]:
         frame["notes"] = frame["notes"].fillna("").astype(str)
     else:
         frame["notes"] = ""
+    for column in ("gbps_basis", "traffic_model", "estimated_traffic_formula"):
+        frame[column] = frame["notes"].str.extract(rf"(?:^|;){column}=([^;]*)", expand=False).fillna("unreported")
+    frame["estimated_global_total_bytes"] = pd.to_numeric(
+        frame["notes"].str.extract(r"(?:^|;)estimated_global_total_bytes=([^;]*)", expand=False), errors="coerce"
+    ).fillna(0).astype("int64")
     frame["size_bytes"] = frame["problem_size"] * BYTES_PER_ELEMENT
     frame["size_mib"] = frame["size_bytes"] / (1024.0 * 1024.0)
 
@@ -114,7 +127,10 @@ def _quantile_95(series: pd.Series) -> float:
 
 def _build_summary(frame: pd.DataFrame) -> pd.DataFrame:
     summary = (
-        frame.groupby(["variant", "problem_size", "size_bytes", "size_mib"], as_index=False)
+        frame.groupby([
+            "variant", "problem_size", "size_bytes", "size_mib", "gbps_basis", "traffic_model",
+            "estimated_traffic_formula", "estimated_global_total_bytes",
+        ], as_index=False)
         .agg(
             sample_count=("gpu_ms", "count"),
             correctness_pass_rate=("correctness_pass", "mean"),
@@ -140,9 +156,10 @@ def _build_summary(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _build_relative(summary: pd.DataFrame) -> pd.DataFrame:
+    comparison_columns = ["problem_size", "size_bytes", "size_mib", "gbps_basis", "traffic_model", "estimated_traffic_formula"]
     baseline = (
         summary[summary["variant"] == "items_per_thread_1"][
-            ["problem_size", "size_bytes", "size_mib", "gpu_ms_median", "gbps_median", "throughput_median"]
+            comparison_columns + ["gpu_ms_median", "gbps_median", "throughput_median"]
         ]
         .rename(
             columns={
@@ -153,7 +170,7 @@ def _build_relative(summary: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index(drop=True)
     )
-    relative = summary.merge(baseline, on=["problem_size", "size_bytes", "size_mib"], how="inner")
+    relative = summary.merge(baseline, on=comparison_columns, how="inner")
     relative["speedup_vs_baseline"] = relative["baseline_gpu_ms_median"] / relative["gpu_ms_median"]
     relative["gpu_delta_pct_vs_baseline"] = (
         (relative["gpu_ms_median"] - relative["baseline_gpu_ms_median"]) / relative["baseline_gpu_ms_median"]
@@ -170,6 +187,10 @@ def _build_stability(summary: pd.DataFrame) -> pd.DataFrame:
         [
             "variant",
             "problem_size",
+            "gbps_basis",
+            "traffic_model",
+            "estimated_traffic_formula",
+            "estimated_global_total_bytes",
             "gpu_ms_p95",
             "p95_to_median_gpu_ms",
             "gpu_ms_cv",
@@ -182,12 +203,15 @@ def _build_stability(summary: pd.DataFrame) -> pd.DataFrame:
     ].sort_values(["problem_size", "variant"]).reset_index(drop=True)
 
 
-def _write_table(frame: pd.DataFrame, output_path: Path) -> None:
+def _write_table(frame: pd.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output_path, index=False, float_format="%.6f")
+    return output_path
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description="Analyze Experiment 22 prefix sum scan data.")
     parser.add_argument(
         "--skip-current",
@@ -202,9 +226,10 @@ def main() -> None:
     stability = _build_stability(summary)
 
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
-    _write_table(summary, TABLES_DIR / "prefix_sum_scan_summary.csv")
-    _write_table(relative, TABLES_DIR / "prefix_sum_scan_relative.csv")
-    _write_table(stability, TABLES_DIR / "prefix_sum_scan_stability.csv")
+    generated_tables.append(_write_table(summary, TABLES_DIR / "prefix_sum_scan_summary.csv"))
+    generated_tables.append(_write_table(relative, TABLES_DIR / "prefix_sum_scan_relative.csv"))
+    generated_tables.append(_write_table(stability, TABLES_DIR / "prefix_sum_scan_stability.csv"))
+    write_analysis_provenance(TABLES_DIR, [source_path], EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
 
     source_label = source_path.resolve().relative_to(ROOT.resolve()).as_posix()
     gpu_name = str(metadata.get("gpu_name", "unknown_gpu"))

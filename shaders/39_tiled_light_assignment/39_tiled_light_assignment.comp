@@ -20,8 +20,8 @@ layout(std430, binding = 1) buffer TileCountBuffer {
     uint values[];
 } tile_count_buffer;
 
-// Contract: stats_buffer[0] records total light-tile overlaps; stats_buffer[1]
-// mirrors assignment_mode so readback/analysis can sanity-check the row.
+// Contract: stats_buffer[0] is reserved and unchanged; stats_buffer[1] mirrors
+// assignment_mode. The host derives overlaps from tile counts after timing.
 layout(std430, binding = 2) buffer StatsBuffer {
     uint values[];
 } stats_buffer;
@@ -104,7 +104,6 @@ void run_light_atomic(uint light_index) {
             // This is the contention point being measured: clustered lights
             // make many invocations increment the same tile counters.
             atomicAdd(tile_count_buffer.values[tile_index], 1u);
-            atomicAdd(stats_buffer.values[0], 1u);
         }
     }
 }
@@ -130,7 +129,6 @@ void run_tile_serial(uint tile_index) {
     }
 
     tile_count_buffer.values[tile_index] = tile_hits;
-    atomicAdd(stats_buffer.values[0], tile_hits);
 }
 
 void run_tile_parallel_shared(uint tile_index, uint local_index) {
@@ -156,8 +154,7 @@ void run_tile_parallel_shared(uint tile_index, uint local_index) {
     partial_counts[local_index] = local_hits;
     barrier();
 
-    // In-workgroup tree reduction. The only global atomic in this mode records
-    // the total-overlap statistic after the tile count is already complete.
+    // In-workgroup tree reduction followed by one ordinary tile-count store.
     for (uint stride = local_size_x / 2u; stride > 0u; stride >>= 1u) {
         if (local_index < stride) {
             partial_counts[local_index] += partial_counts[local_index + stride];
@@ -167,7 +164,6 @@ void run_tile_parallel_shared(uint tile_index, uint local_index) {
 
     if (local_index == 0u) {
         tile_count_buffer.values[tile_index] = partial_counts[0];
-        atomicAdd(stats_buffer.values[0], partial_counts[0]);
     }
 }
 

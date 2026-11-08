@@ -1,35 +1,70 @@
 # Experiment 43 Results: Ray-Friendly Memory Layouts
 
-## Run Status
-- Benchmark status: latest `20260428_203443Z_2` collection completed; all `20/20` benchmark cases in the refreshed sweep report `correctness_pass_rate=1.0`
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `4` variants x `5` problem sizes, `5` timed iterations, `2` warmup iterations
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-28T20:34:43Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260428_203443Z_2.json)
+## Run status and provenance
 
-## Key Measurements
-- `soa32_sequential` is the fastest variant at every tested size. Its strongest relative result is at `1048576` primitives, where median GPU time drops from `5.178624 ms` for `aos64_sequential` to `2.551520 ms` and median throughput rises from `202481585.842108` to `410961309.337179` (`2.029623x`)
-- Under sequential access, `soa32_sequential` stays `36.69%` to `50.73%` faster than `aos64_sequential`, with median estimated bandwidth between `13.688207` and `14.806120 GB/s`
-- Hashed access is the dominant penalty. At `5592320` primitives, `aos64_hashed` reaches `266.903456 ms` (`11.489072x` slower than `aos64_sequential`) and `soa32_hashed` reaches `203.771904 ms`; relative to their own sequential layouts, hashed access is about `11.49x` slower for `aos64` and `13.85x` slower for `soa32`
+- Current export: **20/20 correctness checks passed**, 4 variants, 1 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `34849897c92dd7d78f6928587c591d1b667967049a57e80da8b3cb718bb9efa9`.
 
-## Artifact Links
-- [Latest runs archive](./runs/nvidia_geforce_rtx_2080_super/20260428_203443Z_2.json)
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [ray friendly memory layouts relative](./results/tables/ray_friendly_memory_layouts_relative.csv)
-- [ray friendly memory layouts stability](./results/tables/ray_friendly_memory_layouts_stability.csv)
-- [ray friendly memory layouts summary](./results/tables/ray_friendly_memory_layouts_summary.csv)
-- [ray friendly memory layouts median gpu ms](./results/charts/ray_friendly_memory_layouts_ms.png)
-- [ray friendly memory layouts relative](./results/charts/ray_friendly_memory_layouts_relative.png)
-- [ray friendly memory layouts stability](./results/charts/ray_friendly_memory_layouts_stability.png)
-- [ray friendly memory layouts throughput](./results/charts/ray_friendly_memory_layouts_throughput.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "43_ray_friendly_memory_layouts", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\43_ray_friendly_memory_layouts\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:46:01.190972Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `4` |
+| row_count | `20` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- On this GPU, coherent traversal benefits substantially from the compact `soa32` layout, while the hashed mapping penalty is larger than the layout effect itself
-- Layout still matters inside the hashed regime, but much less than access coherence; the current sweep supports "coherence first, layout second" more strongly than a universal SoA win
+Exported configuration and metric definitions (all distinct values):
 
-## Limitations
-- Results come from one GPU and driver stack
-- The hashed mapping is only one incoherent access pattern; other ray distributions or traversal kernels may change the ranking
-- Reported GB/s values follow this experiment's own traffic model and are most useful for comparisons within this experiment
+| Row-note field | Recorded values |
+|---|---|
+| active_words | 8 |
+| gbps_mode | logical_payload_bytes |
+| gpu_time_scope | kernel_work_and_host_visibility_dependency |
+| logical_payload_bytes | 6285312 |
+
+## Key measurements
+
+All cases share the reported **problem_size=174592**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| aos64_hashed | 1 | 174592 | 5 | 0.921376 | 189490501.163 | 6.821658 |
+| aos64_sequential | 1 | 174592 | 5 | 0.678368 | 257370630.690 | 9.265343 |
+| soa32_hashed | 1 | 174592 | 5 | 2.606496 | 66983413.748 | 2.411403 |
+| soa32_sequential | 1 | 174592 | 5 | 0.433376 | 402864948.682 | 14.503138 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_114601Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_114601Z_remaining_review_fixes.json).
+- [ray_friendly_memory_layouts_ms.png](./results/charts/ray_friendly_memory_layouts_ms.png)
+- [ray_friendly_memory_layouts_relative.png](./results/charts/ray_friendly_memory_layouts_relative.png)
+- [ray_friendly_memory_layouts_stability.png](./results/charts/ray_friendly_memory_layouts_stability.png)
+- [ray_friendly_memory_layouts_throughput.png](./results/charts/ray_friendly_memory_layouts_throughput.png)
+- [ray_friendly_memory_layouts_relative.csv](./results/tables/ray_friendly_memory_layouts_relative.csv)
+- [ray_friendly_memory_layouts_stability.csv](./results/tables/ray_friendly_memory_layouts_stability.csv)
+- [ray_friendly_memory_layouts_summary.csv](./results/tables/ray_friendly_memory_layouts_summary.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- The ray-style workload is a flat checksum proxy without dependent traversal; layout and record footprint vary together.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

@@ -417,6 +417,7 @@ double run_readback_stage(VulkanContext& context, const BufferResource& src_buff
     return context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
         const VkBufferCopy copy_region{0U, 0U, bytes};
         vkCmdCopyBuffer(command_buffer, src_buffer.buffer, staging_buffer.buffer, 1U, &copy_region);
+        VulkanComputeUtils::record_transfer_write_to_host_read_barrier(command_buffer, staging_buffer.buffer, bytes);
     });
 }
 
@@ -501,6 +502,11 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
                                     const MemoryCopyBaselineExperimentConfig& config) {
     MemoryCopyBaselineExperimentOutput output{};
     const bool verbose_progress = config.verbose_progress;
+
+    if (config.max_buffer_bytes < kReadOnlyProbeCount * sizeof(float)) {
+        std::cerr << "Memory copy baseline requires at least four floats per buffer (48 bytes total scratch).\n";
+        return output;
+    }
 
     if (!context.gpu_timestamps_supported()) {
         std::cerr << "Memory copy baseline experiment requires GPU timestamp support.\n";
@@ -796,6 +802,7 @@ run_memory_copy_baseline_experiment(VulkanContext& context, const BenchmarkRunne
                               << ", readback_ms=" << readback_ms << ", end_to_end_ms=" << end_to_end_ms.count()
                               << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
                 }
+                append_note(notes, "readback_scope=copy_and_host_visibility");
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = kExperimentId,
                     .variant = mode_descriptor.variant_name,

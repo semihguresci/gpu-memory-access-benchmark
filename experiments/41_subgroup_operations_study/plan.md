@@ -19,19 +19,22 @@ By the end of this investigation, you should be able to:
 - Record assumptions and known unknowns before running the benchmarks.
 
 ## 4. Hypothesis
-Subgroup intrinsics win for reductions/prefix helpers when subgroup assumptions match hardware behavior.
+Subgroup-assisted workgroup aggregation can reduce explicit shared-memory coordination compared with a shared tree, including the cost of combining subgroup partials.
 
 ## 5. Experimental Design
 ### Independent variables
-Primitive type, subgroup availability/size, data size, fallback strategy.
+Shared-tree versus subgroup-assisted workgroup aggregate and data size; subgroup size/support are observed device properties.
 
 ### Controlled variables
 - Fixed benchmark harness and timing method (GPU timestamp queries).
 - Fixed data generation seeds per scenario where reproducibility is needed.
 - Fixed correctness oracle per variant.
+- Both variants return the same workgroup-wide `uint32` sum plus `17 * odd_input_count` to every invocation. Zero-pad out-of-range invocations. No local-ID/subgroup-lane mapping is assumed.
+- The shared path reduces 256 local-ID-indexed inputs; the subgroup path writes one sum and ballot count per actual subgroup, then combines `gl_NumSubgroups` partials. Both use at most 2 KiB shared memory.
+- Compare every output to an independent CPU workgroup aggregate after every timed iteration; initialize each output to the complement of its expected result before dispatch.
 
 ### Metrics
-Runtime, synchronization count, temp memory footprint, portability constraints.
+GPU time, logical elements/s and requested payload GB/s (one 4-byte input load and one 4-byte output store per element). This is a full workgroup primitive, not timing of a subgroup instruction in isolation or observed DRAM bandwidth.
 
 ## 6. Implementation Plan
 1. Implement minimally correct baseline variant first.

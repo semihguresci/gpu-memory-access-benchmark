@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,37 @@ TEST(AppOptionsTests, ParsesVerboseProgressFlag) {
     EXPECT_TRUE(options.verbose_progress);
 }
 
+TEST(AppOptionsTests, DeviceSelectionDefaultsToEmptyString) {
+    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics"};
+    const std::vector<std::string> args = {"gpu_memory_layout_experiments", "--experiment", "01_dispatch_basics"};
+
+    const AppOptions options = TestSupport::parse_app_options(args, available_experiment_ids);
+
+    EXPECT_TRUE(options.device_selection.empty());
+}
+
+TEST(AppOptionsTests, ParsesDeviceIndexSelection) {
+    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics"};
+    const std::vector<std::string> args = {
+        "gpu_memory_layout_experiments", "--experiment", "01_dispatch_basics", "--device", "1",
+    };
+
+    const AppOptions options = TestSupport::parse_app_options(args, available_experiment_ids);
+
+    EXPECT_EQ(options.device_selection, "1");
+}
+
+TEST(AppOptionsTests, ParsesDeviceNameSubstringSelection) {
+    const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics"};
+    const std::vector<std::string> args = {
+        "gpu_memory_layout_experiments", "--experiment", "01_dispatch_basics", "--device", "GeForce",
+    };
+
+    const AppOptions options = TestSupport::parse_app_options(args, available_experiment_ids);
+
+    EXPECT_EQ(options.device_selection, "GeForce");
+}
+
 TEST(AppOptionsTests, UnknownExperimentIdExitsWithCodeTwo) {
     EXPECT_EXIT(([] {
                     const std::vector<std::string> available_experiment_ids = {"01_dispatch_basics"};
@@ -99,4 +131,27 @@ TEST(AppOptionsTests, InvalidSizeExitsWithCodeTwo) {
                     std::exit(0);
                 }()),
                 ::testing::ExitedWithCode(2), "Invalid --size value");
+}
+
+TEST(AppOptionsTests, RejectsSignedAndOverflowingScratchSizes) {
+    for (const char* size_text : {"-1", "-1M", "+1M", "17592186044417M", "18446744073709551616"}) {
+        SCOPED_TRACE(size_text);
+        EXPECT_EXIT(([&] {
+                        const std::vector<std::string> experiments = {"01_dispatch_basics"};
+                        const std::vector<std::string> args = {"benchmark", "--size", size_text};
+                        static_cast<void>(TestSupport::parse_app_options(args, experiments));
+                        std::exit(0);
+                    }()),
+                    ::testing::ExitedWithCode(2), "Invalid --size");
+    }
+}
+
+TEST(AppOptionsTests, AcceptsLargestRepresentableScratchSizeWithoutAllocation) {
+    const auto maximum = std::numeric_limits<VkDeviceSize>::max();
+    const AppOptions byte_options =
+        TestSupport::parse_app_options({"benchmark", "--size", std::to_string(maximum)}, {"01_dispatch_basics"});
+    EXPECT_EQ(byte_options.scratch_size_bytes, maximum);
+    const AppOptions suffix_options =
+        TestSupport::parse_app_options({"benchmark", "--size", "17592186044415M"}, {"01_dispatch_basics"});
+    EXPECT_EQ(suffix_options.scratch_size_bytes, (maximum / (1024U * 1024U)) * (1024U * 1024U));
 }

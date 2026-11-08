@@ -5,12 +5,23 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime, timezone
+import sys
 from pathlib import Path
 from typing import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    measurement_revision,
+    preferred_run_id,
+    select_compatible_runs,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "15_bandwidth_saturation_sweep"
 BYTES_PER_ELEMENT = 4.0
@@ -41,13 +52,13 @@ def _parse_iso8601(value: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _discover_run_files(runs_dir: Path, include_current: bool) -> list[Path]:
+def _discover_run_files(runs_dir: Path, include_current: bool, revision: str | None = None) -> list[Path]:
     paths = sorted(runs_dir.rglob("*.json")) if runs_dir.exists() else []
     if include_current and CURRENT_RUN_JSON.exists():
         current_resolved = CURRENT_RUN_JSON.resolve()
         if all(path.resolve() != current_resolved for path in paths):
             paths.append(CURRENT_RUN_JSON)
-    return paths
+    return select_compatible_runs(paths, current_path=CURRENT_RUN_JSON if include_current else None, revision=revision)
 
 
 def _relative_run_id(path: Path) -> str:
@@ -64,7 +75,7 @@ def _load_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None, None]:
         print(f"[warn] Skipping unreadable JSON: {path} ({exc})")
         return None, None
 
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, "15_bandwidth_saturation_sweep", path)
     if not isinstance(rows, list) or not rows:
         return None, None
 
@@ -94,7 +105,7 @@ def _load_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None, None]:
     frame["size_bytes"] = frame["problem_size"] * BYTES_PER_ELEMENT
     frame["size_mib"] = frame["size_bytes"] / (1024.0 * 1024.0)
     if "correctness_pass" in frame.columns:
-        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.lower().isin(["1", "true", "yes"])
+        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.strip().str.lower().isin(["1", "true", "yes"])
     else:
         frame["correctness_pass"] = False
 
@@ -110,6 +121,7 @@ def _load_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None, None]:
 
     run_id = _relative_run_id(path)
     device_id = f"{gpu_name} | drv {driver_version} | vk {vulkan_api_version}"
+    frame["measurement_revision"] = measurement_revision(metadata)
     frame["run_id"] = run_id
     frame["gpu_name"] = gpu_name
     frame["driver_version"] = driver_version
@@ -119,6 +131,7 @@ def _load_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None, None]:
     frame["device_id"] = device_id
 
     record = {
+        "measurement_revision": measurement_revision(metadata),
         "run_id": run_id,
         "gpu_name": gpu_name,
         "driver_version": driver_version,
@@ -158,6 +171,7 @@ def _quantile_95(series: pd.Series) -> float:
 
 def _build_summary(all_rows: pd.DataFrame) -> pd.DataFrame:
     group_columns = [
+        "measurement_revision",
         "run_id",
         "gpu_name",
         "driver_version",
@@ -245,16 +259,17 @@ def _build_plateau_summary(latest_summary: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(records).sort_values("variant").reset_index(drop=True)
 
 
-def _write_table(frame: pd.DataFrame, output_path: Path) -> None:
+def _write_table(frame: pd.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output_path, index=False)
+    return output_path
 
 
 def _format_size_ticks(values: np.ndarray) -> list[str]:
     return [str(int(value)) for value in values]
 
 
-def _plot_metric(summary: pd.DataFrame, metric_column: str, y_label: str, title: str, output_path: Path) -> None:
+def _plot_metric(summary: pd.DataFrame, metric_column: str, y_label: str, title: str, output_path: Path) -> Path | None:
     variants = sorted(summary["variant"].unique().tolist())
     size_values = np.array(sorted(summary["size_mib"].unique().tolist()), dtype=float)
     if len(size_values) == 0:
@@ -278,9 +293,12 @@ def _plot_metric(summary: pd.DataFrame, metric_column: str, y_label: str, title:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description="Analyze Experiment 15 bandwidth saturation sweep runs.")
     parser.add_argument(
         "--runs-dir",
@@ -293,9 +311,13 @@ def main() -> None:
         action="store_true",
         help="Do not include results/tables/benchmark_results.json as an implicit run.",
     )
+    parser.add_argument(
+        "--measurement-revision",
+        help="Analyze one revision only (default: current run, otherwise newest archive); use legacy-unversioned for old runs.",
+    )
     args = parser.parse_args()
 
-    run_files = _discover_run_files(args.runs_dir, include_current=not args.skip_current)
+    run_files = _discover_run_files(args.runs_dir, include_current=not args.skip_current, revision=args.measurement_revision)
     all_rows, run_index = _load_all_runs(run_files)
     if all_rows.empty or run_index.empty:
         raise FileNotFoundError(
@@ -306,12 +328,12 @@ def main() -> None:
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    _write_table(run_index.drop(columns=["exported_at_dt"]), TABLES_DIR / "bandwidth_saturation_runs_index.csv")
+    generated_tables.append(_write_table(run_index.drop(columns=["exported_at_dt"]), TABLES_DIR / "bandwidth_saturation_runs_index.csv"))
 
     summary = _build_summary(all_rows)
-    _write_table(summary, TABLES_DIR / "bandwidth_saturation_multi_run_summary.csv")
+    generated_tables.append(_write_table(summary, TABLES_DIR / "bandwidth_saturation_multi_run_summary.csv"))
 
-    latest_run_id = run_index.sort_values(["exported_at_dt", "run_id"]).iloc[-1]["run_id"]
+    latest_run_id = preferred_run_id(run_index, CURRENT_RUN_JSON if not args.skip_current else None, ROOT)
     latest_rows = all_rows[all_rows["run_id"] == latest_run_id].copy()
     latest_summary = summary[summary["run_id"] == latest_run_id].copy()
     latest_summary_simple = latest_summary[
@@ -330,27 +352,28 @@ def main() -> None:
             "sample_count",
         ]
     ].sort_values(["variant", "size_bytes"])
-    _write_table(latest_summary_simple, TABLES_DIR / "bandwidth_saturation_summary.csv")
-    _write_table(_build_status_overview(latest_rows), TABLES_DIR / "bandwidth_saturation_status_overview.csv")
+    generated_tables.append(_write_table(latest_summary_simple, TABLES_DIR / "bandwidth_saturation_summary.csv"))
+    generated_tables.append(_write_table(_build_status_overview(latest_rows), TABLES_DIR / "bandwidth_saturation_status_overview.csv"))
 
     plateau_summary = _build_plateau_summary(latest_summary_simple)
-    _write_table(plateau_summary, TABLES_DIR / "bandwidth_saturation_plateau_summary.csv")
+    generated_tables.append(_write_table(plateau_summary, TABLES_DIR / "bandwidth_saturation_plateau_summary.csv"))
 
-    _plot_metric(
+    generated_charts.append(_plot_metric(
         latest_summary_simple,
         metric_column="gbps_median",
         y_label="GB/s (median)",
         title="Experiment 15 Bandwidth Saturation Sweep: Effective Bandwidth",
         output_path=CHARTS_DIR / "bandwidth_saturation_gbps_vs_size.png",
-    )
-    _plot_metric(
+    ))
+    generated_charts.append(_plot_metric(
         latest_summary_simple,
         metric_column="gpu_ms_median",
         y_label="gpu_ms (median)",
         title="Experiment 15 Bandwidth Saturation Sweep: Dispatch Time",
         output_path=CHARTS_DIR / "bandwidth_saturation_gpu_ms_vs_size.png",
-    )
+    ))
 
+    write_analysis_provenance(TABLES_DIR, run_files, EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
     print(f"Processed runs: {len(run_index)}")
     print(f"Latest run: {latest_run_id}")
     print(f"Wrote tables to: {TABLES_DIR}")

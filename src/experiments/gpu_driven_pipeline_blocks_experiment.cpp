@@ -40,12 +40,11 @@ struct VariantDescriptor {
     VariantKind kind;
     const char* variant_name;
     uint32_t dispatch_count;
-    uint64_t estimated_total_bytes_per_element;
 };
 
 constexpr std::array<VariantDescriptor, 2> kVariantDescriptors = {{
-    {VariantKind::StagedThreeDispatch, "staged_three_dispatch", 3U, 36ULL},
-    {VariantKind::FusedSingleDispatch, "fused_single_dispatch", 1U, 16ULL},
+    {.kind = VariantKind::StagedThreeDispatch, .variant_name = "staged_three_dispatch", .dispatch_count = 3U},
+    {.kind = VariantKind::FusedSingleDispatch, .variant_name = "fused_single_dispatch", .dispatch_count = 1U},
 }};
 
 struct BufferResources {
@@ -404,6 +403,7 @@ double run_variant_dispatch(VulkanContext& context, const PipelineResources& pip
                     record_compute_barrier(command_buffer);
                 }
             }
+            VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
             return;
         }
 
@@ -417,6 +417,7 @@ double run_variant_dispatch(VulkanContext& context, const PipelineResources& pip
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(constants)), &constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -428,7 +429,14 @@ void reset_outputs(uint32_t* visibility_values, uint32_t* bucket_values, uint32_
 }
 
 void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, uint32_t element_count,
-                       uint64_t logical_payload_bytes, bool correctness_pass, bool dispatch_ok) {
+                       uint32_t visible_count, uint64_t logical_payload_bytes, bool correctness_pass,
+                       bool dispatch_ok) {
+    const uint64_t elements = element_count;
+    // Source-level storage operations, not observed cache/DRAM traffic. Stage C
+    // reads a bucket only for visible elements; all other requests are fixed.
+    const uint64_t estimated_global_total_bytes = descriptor.kind == VariantKind::StagedThreeDispatch
+                                                      ? ((8ULL * elements) + visible_count) * sizeof(uint32_t)
+                                                      : 4ULL * elements * sizeof(uint32_t);
     append_note(notes, "variant=" + std::string(descriptor.variant_name));
     append_note(notes, "element_count=" + std::to_string(element_count));
     append_note(notes, "dispatches_per_iteration=" + std::to_string(descriptor.dispatch_count));
@@ -436,8 +444,11 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     append_note(notes, "bucket_count=" + std::to_string(kBucketCount));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "logical_payload_bytes=" + std::to_string(logical_payload_bytes));
-    append_note(notes, "estimated_global_total_bytes=" + std::to_string(descriptor.estimated_total_bytes_per_element *
-                                                                        static_cast<uint64_t>(element_count)));
+    append_note(notes, "visible_count=" + std::to_string(visible_count));
+    append_note(notes, "estimated_global_total_bytes=" + std::to_string(estimated_global_total_bytes));
+    append_note(notes, "traffic_model=source_storage_buffer_operations_not_physical_dram");
+    append_note(notes, "estimated_traffic_formula=" +
+                           std::string(descriptor.kind == VariantKind::StagedThreeDispatch ? "32N_plus_4V" : "16N"));
     append_note(notes, "gbps_mode=logical_payload_bytes");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
@@ -466,6 +477,8 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
     std::vector<uint32_t> output_reference;
     build_reference_outputs(input_values, element_count, kVisibilityThresholdMilli, kBucketCount, visibility_reference,
                             bucket_reference, output_reference);
+    const auto visible_count =
+        static_cast<uint32_t>(std::count(visibility_reference.begin(), visibility_reference.end(), 1U));
 
     const bool input_valid = validate_input_values(input_values, element_count);
     const uint64_t logical_payload_bytes = compute_logical_payload_bytes(element_count);
@@ -506,7 +519,9 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
-        record_case_notes(notes, descriptor, element_count, logical_payload_bytes, correctness_pass, dispatch_ok);
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
+        record_case_notes(notes, descriptor, element_count, visible_count, logical_payload_bytes, correctness_pass,
+                          dispatch_ok);
 
         if (verbose_progress) {
             std::cout << "[" << kExperimentId << "] timed " << (iteration + 1U) << "/" << runner.timed_iterations()

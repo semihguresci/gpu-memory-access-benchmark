@@ -336,6 +336,8 @@ double run_readback_stage(VulkanContext& context, const BufferResource& output_b
     return context.measure_gpu_time_ms([&](VkCommandBuffer command_buffer) {
         const VkBufferCopy copy_region{0U, 0U, kOutputBytes};
         vkCmdCopyBuffer(command_buffer, output_buffer.buffer, staging_buffer.buffer, 1U, &copy_region);
+        VulkanComputeUtils::record_transfer_write_to_host_read_barrier(command_buffer, staging_buffer.buffer,
+                                                                       kOutputBytes);
     });
 }
 
@@ -445,6 +447,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "host_read_dependency=transfer_to_host_in_readback_stage");
         record_case_notes(notes, strategy, problem_size, group_count_x, rounded_from_max, correctness_pass,
                           dispatch_ok);
 

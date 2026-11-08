@@ -13,6 +13,7 @@ This folder contains the planning, architecture, and research-positioning notes 
 
 ## Results-First Documents
 - [research_overview.md](research_overview.md): public-facing project brief, methodology, key results, and priority extensions.
+- [experiment_06_15_concepts_blog.md](experiment_06_15_concepts_blog.md): blog-style explanation of the layout, access-pattern, locality, and saturation concepts covered by Experiments 06-15.
 - [../readme.md](../readme.md): top-level repository overview with headline findings and visuals.
 
 ## Program Plans

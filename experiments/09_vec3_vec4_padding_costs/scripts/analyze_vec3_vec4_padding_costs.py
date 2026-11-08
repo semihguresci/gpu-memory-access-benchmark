@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    latest_compatible_run,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "09_vec3_vec4_padding_costs"
 
@@ -47,9 +56,7 @@ def _parse_notes_field(notes: str) -> dict[str, str]:
 
 def _latest_run_path(runs_dir: Path) -> Path | None:
     candidates = sorted(path for path in runs_dir.rglob("*.json") if path.is_file()) if runs_dir.exists() else []
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+    return latest_compatible_run(candidates)
 
 
 def _load_payload(input_path: Path) -> dict:
@@ -58,7 +65,7 @@ def _load_payload(input_path: Path) -> dict:
 
 def _load_frame(input_path: Path) -> tuple[pd.DataFrame, dict]:
     payload = _load_payload(input_path)
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, "09_vec3_vec4_padding_costs", input_path)
     if not isinstance(rows, list) or not rows:
         raise ValueError("Input benchmark JSON has no rows[] payload.")
 
@@ -81,7 +88,7 @@ def _load_frame(input_path: Path) -> tuple[pd.DataFrame, dict]:
         frame["notes"] = ""
 
     if "correctness_pass" in frame.columns:
-        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.lower().isin(["1", "true", "yes"])
+        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.strip().str.lower().isin(["1", "true", "yes"])
     else:
         frame["correctness_pass"] = False
 
@@ -147,12 +154,13 @@ def _build_summary(frame: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def _write_table(frame: pd.DataFrame, output_path: Path) -> None:
+def _write_table(frame: pd.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output_path, index=False, float_format="%.6f")
+    return output_path
 
 
-def _plot_summary(summary: pd.DataFrame, output_path: Path) -> None:
+def _plot_summary(summary: pd.DataFrame, output_path: Path) -> Path | None:
     fig, ax = plt.subplots(figsize=(10, 6))
 
     plot_frame = summary.sort_values(["variant_order", "problem_size", "variant"])
@@ -177,9 +185,12 @@ def _plot_summary(summary: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description="Analyze Experiment 09 vec3 vs vec4 padding cost data.")
     parser.add_argument(
         "--skip-current",
@@ -194,13 +205,14 @@ def main() -> None:
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    _write_table(summary, TABLES_DIR / "vec3_vec4_padding_summary.csv")
-    _plot_summary(summary, CHARTS_DIR / "vec3_vec4_padding_median_gpu_ms.svg")
+    generated_tables.append(_write_table(summary, TABLES_DIR / "vec3_vec4_padding_summary.csv"))
+    generated_charts.append(_plot_summary(summary, CHARTS_DIR / "vec3_vec4_padding_median_gpu_ms.svg"))
 
     rows = int(frame.shape[0])
     variants = int(summary["variant"].nunique())
     source_label = source_path.resolve().relative_to(ROOT.resolve()).as_posix()
     gpu_name = str(metadata.get("gpu_name", "unknown_gpu"))
+    write_analysis_provenance(TABLES_DIR, [source_path], EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
     print(
         f"[ok] Wrote Experiment 09 summary artifacts from {source_label} "
         f"({rows} rows, {variants} variants on {gpu_name})."

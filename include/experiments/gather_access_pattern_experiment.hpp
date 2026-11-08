@@ -11,6 +11,7 @@ class VulkanContext;
 
 struct GatherAccessPatternExperimentConfig {
     std::size_t max_buffer_bytes = 0;
+    std::size_t scratch_size_bytes = 0;
     std::string shader_path;
     bool verbose_progress = false;
     std::uint32_t pattern_seed = 0x6C8E9CF5U;

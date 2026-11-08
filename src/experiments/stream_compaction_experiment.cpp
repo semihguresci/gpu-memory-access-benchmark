@@ -178,10 +178,15 @@ uint64_t compute_estimated_total_bytes(ImplementationKind implementation_kind, u
     const uint64_t b = block_count;
     const uint64_t v = valid_count;
     if (implementation_kind == ImplementationKind::GlobalAtomicAppend) {
-        return (n * sizeof(uint32_t)) + (v * sizeof(uint32_t)) + (v * sizeof(uint32_t) * 2U);
+        // Only survivors read input/write output. Each counter atomic is modeled
+        // as one uint32 read plus one write, not measured physical traffic.
+        return (4U * v) * sizeof(uint32_t);
     }
 
-    return ((3U * n) + v + (3U * b) + 1U) * sizeof(uint32_t);
+    // Stage 1: N prefix writes + B count writes. Stage 2: 2B count
+    // reads + B prefix writes + 1 total-count write. Stage 3: V reads
+    // each of input/local-prefix/block-prefix + V output writes.
+    return (n + (4U * v) + (4U * b) + 1U) * sizeof(uint32_t);
 }
 
 double compute_effective_gbps(ImplementationKind implementation_kind, uint32_t logical_count, uint32_t block_count,
@@ -597,6 +602,7 @@ double run_atomic_pipeline(VulkanContext& context, const DescriptorResources& de
         vkCmdPushConstants(command_buffer, atomic_pipeline.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -639,6 +645,7 @@ double run_three_stage_pipeline(VulkanContext& context, const DescriptorResource
         vkCmdPushConstants(command_buffer, stage3_pipeline.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, block_count, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -676,6 +683,10 @@ void record_case_notes(std::string& notes, ImplementationKind implementation_kin
                            std::to_string(static_cast<unsigned long long>(compute_estimated_total_bytes(
                                implementation_kind, logical_count, block_count, reference.valid_count))));
     append_note(notes, "throughput_basis=input_elements_per_second");
+    append_note(notes, "gbps_basis=estimated_source_level_storage_buffer_bytes");
+    append_note(notes, "traffic_model=survivor_only_input_loads_includes_auxiliary_buffers");
+    append_note(notes, "atomic_rmw_model_bytes=8");
+    append_note(notes, "physical_dram_traffic_measured=false");
     append_note(notes, "validation_mode=" + std::string(implementation_kind == ImplementationKind::ThreeStage
                                                             ? "exact_stable_compaction"
                                                             : "exact_unordered_compaction"));
@@ -763,6 +774,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, implementation_kind, config, logical_count, block_count, valid_ratio_percent,
                           reference, correctness_pass, dispatch_ok);
 

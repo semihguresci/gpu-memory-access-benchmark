@@ -26,8 +26,17 @@ void main() {
         return;
     }
 
-    pos_x[id] += vel_x[id] * dt[id];
-    pos_y[id] += vel_y[id] * dt[id];
-    pos_z[id] += vel_z[id] * dt[id];
-    mass[id] += 0.000001;
+    float px = pos_x[id];
+    float py = pos_y[id];
+    float pz = pos_z[id];
+    float m = mass[id];
+    float vx = vel_x[id];
+    float vy = vel_y[id];
+    float vz = vel_z[id];
+    float time_step = dt[id];
+
+    pos_x[id] = px + vx * time_step;
+    pos_y[id] = py + vy * time_step;
+    pos_z[id] = pz + vz * time_step;
+    mass[id] = m + 0.000001;
 }

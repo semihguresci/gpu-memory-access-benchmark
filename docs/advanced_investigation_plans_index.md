@@ -22,3 +22,6 @@ Canonical plan files now live next to their experiment reports under `experiment
 - [Advanced Investigation 10: Frame-to-Frame Coherence Studies](../experiments/37_frame_to_frame_coherence/plan.md): Temporal stability and ordering reuse effects.
 - [Advanced Investigation 11: GPU-Driven Pipeline Building Blocks](../experiments/44_gpu_driven_pipeline_blocks/plan.md): Compose culling, compaction, bucketing, and argument-like generation.
 - [Advanced Investigation 12: Reproducibility and Cross-GPU Comparison](../experiments/45_cross_gpu_reproducibility/plan.md): Trend stability across architectures and vendors.
+- [Advanced Investigation 13: Dependent Load Latency and Memory-Level Parallelism](../experiments/46_dependent_load_latency/plan.md): Pointer-chase chains separating per-load latency from memory-level parallelism.
+- [Advanced Investigation 14: Coalescing, Spatial Locality, and Cache Residency Factorial](../experiments/47_block_reorder_factorial/plan.md): 2x2 factorial over block visit order and within-block lane ordering with warm/evicted controls.
+- [Advanced Investigation 15: Buffers, Texel Buffers, Storage Images, and Sampled Images](../experiments/48_buffer_vs_image_representation/plan.md): The same integer 2D dataset across flat-buffers and typed image paths with exact unfiltered fetches.

@@ -348,6 +348,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& resources, 
         vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_count)), &push_count);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -420,6 +421,8 @@ void record_case_run(std::string& notes, const std::string& variant_name,
     append_note(notes, "block_size=" + std::to_string(config.block_size));
     append_note(notes, "cluster_size=" + std::to_string(config.cluster_size));
     append_note(notes, "scratch_size_bytes=" + std::to_string(static_cast<unsigned long long>(scratch_size_bytes)));
+    append_note(notes, "per_buffer_budget_bytes=" + std::to_string(config.max_buffer_bytes));
+    append_note(notes, "resident_buffer_payload_bytes=" + std::to_string(physical_span_bytes * 3U));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "group_count_x=" + std::to_string(group_count_x));
     append_note(notes, "dispatch_count=" + std::to_string(kDispatchCount));
@@ -524,7 +527,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
 
         std::string notes;
         record_case_run(notes, variant_name, config, logical_count, physical_span_bytes,
-                        static_cast<VkDeviceSize>(config.max_buffer_bytes), group_count_x, correctness_pass,
+                        static_cast<VkDeviceSize>(config.scratch_size_bytes), group_count_x, correctness_pass,
                         dispatch_ok);
 
         if (config.verbose_progress) {
@@ -534,6 +537,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
                       << ", correctness=" << (correctness_pass ? "pass" : "fail") << "\n";
         }
 
+        append_note(notes, "gpu_time_scope=dispatch_and_host_visibility");
         output.rows.push_back(BenchmarkMeasurementRow{
             .experiment_id = kExperimentId,
             .variant = variant_name,
@@ -606,7 +610,8 @@ run_gather_access_pattern_experiment(VulkanContext& context, const BenchmarkRunn
         std::cout << "[" << kExperimentId << "] Shader: " << shader_path << "\n";
         std::cout << "[" << kExperimentId << "] logical_elements=" << logical_count
                   << ", physical_span_bytes_per_buffer=" << physical_span_bytes
-                  << ", scratch_size_bytes=" << config.max_buffer_bytes << ", seed=" << config.pattern_seed
+                  << ", scratch_size_bytes=" << config.scratch_size_bytes
+                  << ", per_buffer_budget_bytes=" << config.max_buffer_bytes << ", seed=" << config.pattern_seed
                   << ", block_size=" << config.block_size << ", cluster_size=" << config.cluster_size
                   << ", warmup_iterations=" << runner.warmup_iterations()
                   << ", timed_iterations=" << runner.timed_iterations() << "\n";

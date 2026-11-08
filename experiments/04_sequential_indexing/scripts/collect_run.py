@@ -102,7 +102,11 @@ def main() -> None:
     output_path = _build_output_path(payload, args.runs_dir, args.label)
     output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    run_id = output_path.resolve().relative_to(ROOT.resolve()).as_posix()
+    resolved_output = output_path.resolve()
+    try:
+        run_id = resolved_output.relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        run_id = resolved_output.as_posix()
     print(f"Collected run: {run_id}")
 
 

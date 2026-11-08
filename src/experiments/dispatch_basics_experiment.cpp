@@ -170,6 +170,7 @@ bool create_write_pipeline_resources(VulkanContext& context, const std::string& 
             .binding = 0U, .descriptor_type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .buffer_info = buffer_info}});
 
     if (!VulkanComputeUtils::create_pipeline_layout(context.device(), {out_resources.descriptor_set_layout},
+                                                    {{VK_SHADER_STAGE_COMPUTE_BIT, 0U, sizeof(uint32_t)}},
                                                     out_resources.pipeline_layout)) {
         std::cerr << "Failed to create write pipeline layout.\n";
         return false;
@@ -221,8 +222,18 @@ double run_dispatch_write_stage(VulkanContext& context, const WritePipelineResou
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, resources.pipeline);
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, resources.pipeline_layout, 0U, 1U,
                                 &resources.descriptor_set, 0U, nullptr);
+        const auto element_count = static_cast<uint32_t>(bytes / sizeof(float));
+        vkCmdPushConstants(command_buffer, resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
+                           sizeof(element_count), &element_count);
         for (uint32_t dispatch_index = 0; dispatch_index < dispatch_count; ++dispatch_index) {
             vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+            if (dispatch_index + 1U < dispatch_count) {
+                const VkMemoryBarrier dependency{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT,
+                                                 VK_ACCESS_SHADER_WRITE_BIT};
+                vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0U, 1U, &dependency, 0U, nullptr, 0U,
+                                     nullptr);
+            }
         }
 
         VulkanComputeUtils::record_compute_write_to_transfer_read_barrier(command_buffer,
@@ -245,6 +256,8 @@ double run_readback_stage(VulkanContext& context, const WritePipelineResources& 
         const VkBufferCopy copy_region{0U, 0U, bytes};
         vkCmdCopyBuffer(command_buffer, resources.device_storage.buffer, resources.readback_staging.buffer, 1U,
                         &copy_region);
+        VulkanComputeUtils::record_transfer_write_to_host_read_barrier(command_buffer,
+                                                                       resources.readback_staging.buffer, bytes);
     });
 }
 
@@ -438,6 +451,8 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                 const bool correctness = upload_ok && dispatch_ok && readback_ok && data_ok;
 
                 std::string notes;
+                append_note(notes, "timing_scope=dispatches_and_dependencies");
+                append_note(notes, "inter_dispatch_dependencies=" + std::to_string(dispatch_count - 1U));
                 if (!upload_ok) {
                     append_note(notes, "upload_ms_non_finite");
                 }
@@ -461,6 +476,7 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                               << ", end_to_end_ms=" << end_to_end_ms.count()
                               << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
                 }
+                append_note(notes, "readback_scope=copy_and_host_visibility");
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = "01_dispatch_basics",
                     .variant = "contiguous_write",
@@ -562,6 +578,7 @@ DispatchBasicsExperimentOutput run_dispatch_basics_experiment(VulkanContext& con
                               << ", readback_ms=" << readback_ms << ", end_to_end_ms=" << end_to_end_ms.count()
                               << ", correctness=" << (correctness ? "pass" : "fail") << "\n";
                 }
+                append_note(notes, "readback_scope=copy_and_host_visibility");
                 output.rows.push_back(BenchmarkMeasurementRow{
                     .experiment_id = "01_dispatch_basics",
                     .variant = "noop",

@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Plot only tables bound to validated raw measurements.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "17_tile_size_sweep"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -26,7 +38,9 @@ def _load_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing input table: {path}")
 
+    validate_derived_table(path)
     frame = pd.read_csv(path)
+    validate_summary_table(frame, path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
 
@@ -41,7 +55,7 @@ def _plot_metric_by_tile_size(
     ylabel: str,
     *,
     yscale: str | None = None,
-) -> None:
+) -> Path | None:
     fig, ax = plt.subplots(figsize=(10, 6))
 
     for implementation, style in IMPLEMENTATION_STYLE.items():
@@ -70,6 +84,7 @@ def _plot_metric_by_tile_size(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _plot_relative(
@@ -80,7 +95,7 @@ def _plot_relative(
     ylabel: str,
     *,
     baseline: float | None = None,
-) -> None:
+) -> Path | None:
     plot_frame = frame.sort_values("tile_size")
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -97,44 +112,48 @@ def _plot_relative(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, EXPERIMENT_ID)
     summary = _load_table(SUMMARY_CSV)
     relative = _load_table(RELATIVE_CSV)
     stability = _load_table(STABILITY_CSV)
 
-    _plot_metric_by_tile_size(
+    generated_charts.append(_plot_metric_by_tile_size(
         summary,
         "gpu_ms_median",
         CHARTS_DIR / "tile_size_sweep_median_gpu_ms.png",
         "Experiment 17: Median GPU Time by Tile Size",
         "GPU ms (median)",
-    )
-    _plot_metric_by_tile_size(
+    ))
+    generated_charts.append(_plot_metric_by_tile_size(
         summary,
         "gbps_median",
         CHARTS_DIR / "tile_size_sweep_estimated_gbps.png",
         "Experiment 17: Estimated Global Traffic GB/s by Tile Size",
         "Estimated GB/s",
-    )
-    _plot_relative(
+    ))
+    generated_charts.append(_plot_relative(
         relative,
         "tiled_speedup_vs_direct",
         CHARTS_DIR / "tile_size_sweep_speedup_vs_direct.png",
         "Experiment 17: shared_tiled Speedup vs direct_global",
         "Speedup factor",
         baseline=1.0,
-    )
-    _plot_metric_by_tile_size(
+    ))
+    generated_charts.append(_plot_metric_by_tile_size(
         stability,
         "p95_to_median_gpu_ms",
         CHARTS_DIR / "tile_size_sweep_stability_ratio.png",
         "Experiment 17: GPU Time Stability by Tile Size",
         "p95 / median GPU ms",
-    )
+    ))
 
     print(f"[ok] Wrote Experiment 17 charts to {CHARTS_DIR.relative_to(ROOT)}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

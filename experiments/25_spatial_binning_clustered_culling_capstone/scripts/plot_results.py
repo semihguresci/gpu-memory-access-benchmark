@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+# Plot only tables bound to validated raw measurements.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    validate_analysis_provenance,
+    validate_derived_table,
+    validate_summary_table,
+    write_plot_provenance,
+)
+
+EXPERIMENT_ID = "25_spatial_binning_clustered_culling_capstone"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -31,7 +43,9 @@ STRATEGY_STYLE = {
 def _load_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing input table: {path}")
+    validate_derived_table(path)
     frame = pd.read_csv(path)
+    validate_summary_table(frame, path)
     if frame.empty:
         raise ValueError(f"Input table is empty: {path}")
     return frame
@@ -45,7 +59,7 @@ def _sort_distribution(frame: pd.DataFrame) -> pd.DataFrame:
     return sorted_frame.sort_values(["distribution_order"]).reset_index(drop=True)
 
 
-def _plot_grouped_bars(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> None:
+def _plot_grouped_bars(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> Path | None:
     plot_frame = _sort_distribution(frame)
     distributions = [str(value) for value in plot_frame["distribution"].unique()]
     x_positions = list(range(len(distributions)))
@@ -71,9 +85,10 @@ def _plot_grouped_bars(frame: pd.DataFrame, y_column: str, output_path: Path, ti
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_relative(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> None:
+def _plot_relative(frame: pd.DataFrame, y_column: str, output_path: Path, title: str, ylabel: str) -> Path | None:
     plot_frame = _sort_distribution(frame)
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -88,43 +103,47 @@ def _plot_relative(frame: pd.DataFrame, y_column: str, output_path: Path, title:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def main() -> None:
+    generated_charts: list[Path | None] = []
+    validate_analysis_provenance(TABLES_DIR, EXPERIMENT_ID)
     summary = _load_table(SUMMARY_CSV)
     relative = _load_table(RELATIVE_CSV)
     stability = _load_table(STABILITY_CSV)
 
-    _plot_grouped_bars(
+    generated_charts.append(_plot_grouped_bars(
         summary,
         "gpu_ms_median",
         CHARTS_DIR / "spatial_binning_clustered_culling_capstone_median_gpu_ms.png",
         "Experiment 25: Median GPU Time by Distribution",
         "GPU ms (median)",
-    )
-    _plot_grouped_bars(
+    ))
+    generated_charts.append(_plot_grouped_bars(
         summary,
         "gbps_median",
         CHARTS_DIR / "spatial_binning_clustered_culling_capstone_estimated_gbps.png",
         "Experiment 25: Estimated Global Traffic GB/s by Distribution",
         "Estimated GB/s",
-    )
-    _plot_relative(
+    ))
+    generated_charts.append(_plot_relative(
         relative,
         "coherent_speedup_vs_global",
         CHARTS_DIR / "spatial_binning_clustered_culling_capstone_speedup_vs_global.png",
         "Experiment 25: coherent_append Speedup vs global_append",
         "Speedup factor",
-    )
-    _plot_grouped_bars(
+    ))
+    generated_charts.append(_plot_grouped_bars(
         stability,
         "p95_to_median_gpu_ms",
         CHARTS_DIR / "spatial_binning_clustered_culling_capstone_stability_ratio.png",
         "Experiment 25: GPU Time Stability by Distribution",
         "p95 / median GPU ms",
-    )
+    ))
 
     print(f"[ok] Wrote Experiment 25 charts to {CHARTS_DIR.relative_to(ROOT)}.")
+    write_plot_provenance(TABLES_DIR, EXPERIMENT_ID, generated_charts, plot_tools=[Path(__file__)])
 
 
 if __name__ == "__main__":

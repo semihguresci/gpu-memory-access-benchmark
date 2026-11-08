@@ -74,6 +74,7 @@ struct SubgroupSupportInfo {
     uint32_t subgroup_size = 0U;
     bool compute_stage_supported = false;
     bool arithmetic_supported = false;
+    bool ballot_supported = false;
 };
 
 void append_note(std::string& notes, const std::string& note) {
@@ -96,6 +97,7 @@ SubgroupSupportInfo query_subgroup_support(VkPhysicalDevice physical_device) {
         .subgroup_size = subgroup_properties.subgroupSize,
         .compute_stage_supported = (subgroup_properties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) != 0U,
         .arithmetic_supported = (subgroup_properties.supportedOperations & VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) != 0U,
+        .ballot_supported = (subgroup_properties.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) != 0U,
     };
 }
 
@@ -129,7 +131,8 @@ uint32_t compute_block_elements(uint32_t items_per_thread) {
 uint32_t determine_logical_count(std::size_t max_buffer_bytes, uint32_t max_dispatch_groups_x) {
     const uint32_t largest_block_elements = compute_block_elements(kItemsPerThreadValues.back());
     const uint64_t max_from_buffer = static_cast<uint64_t>(max_buffer_bytes) / sizeof(uint32_t);
-    const uint64_t max_from_dispatch = static_cast<uint64_t>(max_dispatch_groups_x) * largest_block_elements;
+    const uint64_t max_from_dispatch =
+        static_cast<uint64_t>(max_dispatch_groups_x) * compute_block_elements(kItemsPerThreadValues.front());
     const uint64_t effective_count =
         std::min({max_from_buffer, max_from_dispatch, static_cast<uint64_t>(kTargetLogicalCount)});
     if (effective_count < largest_block_elements) {
@@ -325,6 +328,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(push_constants)), &push_constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -338,6 +342,7 @@ void record_case_notes(std::string& notes, const VariantDescriptor& descriptor, 
     append_note(notes, "payload_bytes_per_element=8");
     if (descriptor.kind == VariantKind::SubgroupBlockScan) {
         append_note(notes, "subgroup_size=" + std::to_string(subgroup_size));
+        append_note(notes, "logical_order=dense_active_subgroup_lane_order");
     }
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
@@ -392,6 +397,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, descriptor, logical_count, items_per_thread, subgroup_size, correctness_pass,
                           dispatch_ok);
 
@@ -432,8 +438,9 @@ run_subgroup_scan_variants_experiment(VulkanContext& context, const BenchmarkRun
 
     const SubgroupSupportInfo subgroup_support = query_subgroup_support(context.physical_device());
     if (!subgroup_support.compute_stage_supported || !subgroup_support.arithmetic_supported ||
-        subgroup_support.subgroup_size == 0U) {
-        std::cerr << "Selected GPU does not support compute-stage subgroup arithmetic required for Experiment 31.\n";
+        !subgroup_support.ballot_supported || subgroup_support.subgroup_size == 0U) {
+        std::cerr << "Selected GPU does not support compute-stage subgroup arithmetic and ballot required for "
+                     "Experiment 31.\n";
         output.all_points_correct = false;
         return output;
     }

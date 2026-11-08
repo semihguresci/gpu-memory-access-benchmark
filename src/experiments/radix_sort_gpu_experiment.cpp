@@ -24,7 +24,7 @@ using ExperimentMetrics::compute_throughput_elements_per_second;
 
 constexpr const char* kExperimentId = "34_radix_sort_gpu";
 constexpr uint32_t kWorkgroupSize = 256U;
-constexpr uint32_t kDispatchCount = 1U;
+constexpr uint32_t kLogicalSortCount = 1U;
 
 // Candidate problem sizes (in elements). The scan kernel launches a single
 // workgroup of 256 threads that iterates over all blocks, so num_blocks
@@ -534,6 +534,7 @@ double run_sort(VulkanContext& context, const PipelineResources& pipelines, cons
 
             reading_ping = !reading_ping;
         }
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(cmd);
     });
 }
 
@@ -588,6 +589,8 @@ void record_case_notes(std::string& notes, const VariantDescriptor& variant, uin
     append_note(notes, "num_blocks=" + std::to_string(num_blocks));
     append_note(notes, "radix_bits=" + std::to_string(variant.radix_bits));
     append_note(notes, "num_passes=" + std::to_string(variant.num_passes));
+    append_note(notes, "dispatches_per_sort=" + std::to_string(variant.num_passes * 3U));
+    append_note(notes, "throughput_mode=logical_keys_per_sort");
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
     append_note(notes, "key_only_bytes_per_sort=" + std::to_string(key_only_bytes_per_sort));
     append_note(notes, "estimated_global_bytes_per_sort=" + std::to_string(estimated_global_bytes_per_sort));
@@ -649,6 +652,7 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, variant, element_count, num_blocks, key_only_bytes_per_sort,
                           estimated_global_bytes_per_sort, correctness_pass, dispatch_ok);
 
@@ -656,11 +660,11 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Buffe
             .experiment_id = kExperimentId,
             .variant = variant.variant_name,
             .problem_size = element_count,
-            .dispatch_count = kDispatchCount,
+            .dispatch_count = variant.num_passes * 3U,
             .iteration = iteration,
             .gpu_ms = dispatch_ms,
             .end_to_end_ms = e2e_ms.count(),
-            .throughput = compute_throughput_elements_per_second(element_count, kDispatchCount, dispatch_ms),
+            .throughput = compute_throughput_elements_per_second(element_count, kLogicalSortCount, dispatch_ms),
             .gbps = compute_effective_gbps_from_bytes(estimated_global_bytes_per_sort, dispatch_ms),
             .correctness_pass = correctness_pass,
             .notes = std::move(notes),

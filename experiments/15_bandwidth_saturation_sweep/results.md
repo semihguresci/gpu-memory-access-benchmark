@@ -1,35 +1,67 @@
 # Experiment 15 Results: Bandwidth Saturation Sweep
 
-## Run Status
-- Benchmark status: latest `full_refresh_20260405` collection completed (`165/165` row correctness pass)
-- Test status: `ctest --test-dir build-tests-vs -C Release --output-on-failure` passed `37/37` after integration changes
-- GPU: `NVIDIA GeForce RTX 2080 SUPER` (Vulkan `1.4.325`, driver `2480242688`)
-- Config: `--iterations 5 --warmup 2 --label full_refresh_20260405`
-- Validation layers: `disabled`
-- GPU timestamps: `supported`
-- Raw export timestamp (UTC): `2026-04-05T13:59:17Z`
-- Latest collected run: [runs archive](./runs/nvidia_geforce_rtx_2080_super/20260405_135917Z_full_refresh_20260405.json)
-- Sweep coverage: `3` variants x current configured problem sizes
+## Run status and provenance
 
-## Key Measurements
-- All `3` benchmark cases are represented in the refreshed export.
-- At the largest tested `problem_size=33554432`, the fastest median GPU time came from `variant=write_only` at `0.342624 ms`. Median GB/s: `391.735`. Median throughput: `97933688241.337`.
+- Current export: **75/75 correctness checks passed**, 3 variants, 5 problem sizes.
+- Report values below are recomputed directly from the linked current raw rows; no historical ranking or causal conclusion is retained.
+- Test status: this report generator validates exported data; build and test results are recorded only if present in the metadata below.
+- Raw export SHA-256: `70c1d501a1f75968df77c433e64a451f2a4ea2dbd118e04646476c809dc7ebbb`.
 
-## Artifact Links
-- [Raw benchmark export](./results/tables/benchmark_results.json)
-- [bandwidth saturation multi run summary](./results/tables/bandwidth_saturation_multi_run_summary.csv)
-- [bandwidth saturation plateau summary](./results/tables/bandwidth_saturation_plateau_summary.csv)
-- [bandwidth saturation runs index](./results/tables/bandwidth_saturation_runs_index.csv)
-- [bandwidth saturation status overview](./results/tables/bandwidth_saturation_status_overview.csv)
-- [bandwidth saturation summary](./results/tables/bandwidth_saturation_summary.csv)
-- [bandwidth saturation gbps vs size](./results/charts/bandwidth_saturation_gbps_vs_size.png)
-- [bandwidth saturation gpu ms vs size](./results/charts/bandwidth_saturation_gpu_ms_vs_size.png)
-- [benchmark summary](./results/charts/benchmark_summary.png)
+| Runtime metadata | Recorded value |
+|---|---|
+| command_line | `["F:\\Projects\\gpu-memory-layout-playground\\build-tests-vs\\Release\\gpu_memory_layout_experiments.exe", "--experiment", "15_bandwidth_saturation_sweep", "--iterations", "5", "--warmup", "2", "--size", "32M", "--output", "F:\\Projects\\gpu-memory-layout-playground\\experiments\\15_bandwidth_saturation_sweep\\results\\tables\\benchmark_results.json"]` |
+| driver_version | `2559967232` |
+| exported_at_utc | `2026-11-08T11:36:44.416853Z` |
+| generator | `gpu_memory_layout_experiments` |
+| gpu_device_uuid | `da7acb583a2f9c0e88f36758750c1468` |
+| gpu_name | `NVIDIA GeForce RTX 2080 SUPER` |
+| gpu_timestamps_supported | `true` |
+| measurement_revision | `2026-11-08-remaining-review-fixes` |
+| provenance | `{"binary_sha256": "886b3d5d10e0f6d8578f59aff625d01e9400135d11d1db44b187554f5386c120", "git_revision": "262350e79e975b57082b15b324a8365dd8564897", "shader_bundle_file_count": 107, "shader_bundle_sha256": "dc82832bcd22dcbd2d2f9208d0112a92fc722922eec5119138669bd80b4cff1e", "source_tree_sha256": "799d9dd2b6f5c0b7bbea5ab30f5c8a1b587efe86fa2b431ddcf06e6c7201d6e4", "working_tree_dirty": true}` |
+| result_count | `15` |
+| row_count | `75` |
+| shader_binary_directory | `F:/Projects/gpu-memory-layout-playground/build-tests-vs/shaders` |
+| timed_iterations | `5` |
+| validation_enabled | `false` |
+| vulkan_api_version | `1.4.341` |
+| warmup_iterations | `2` |
+| schema | `{"name": "gpu_memory_layout_results", "version": "1.2.0"}` |
 
-## Interpretation
-- The fastest and slowest median GPU-time cases in the current focus set are separated by about `86.29%`, so the sweep does show a large spread on this GPU.
+Exported configuration and metric definitions (all distinct values):
 
-## Limitations
-- Results come from one GPU and driver stack.
-- Reported GB/s values follow each experiment's own metric definition; compare them within an experiment before comparing them across experiments.
-- The refreshed report covers the current sweep only; different sizes, kernels, drivers, or GPUs may shift the ranking.
+| Row-note field | Recorded values |
+|---|---|
+| readback_scope | copy_and_host_visibility |
+
+## Key measurements
+
+All cases share the reported **problem_size=2796202**, the largest size common to every variant and dispatch-count case.
+
+Dispatch counts remain separate because averaging different repetition counts would mix different GPU work.
+
+| Variant | Dispatches | Problem size | Samples | Median GPU ms | Median elements/s | Median GB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| read_only | 1 | 2796202 | 5 | 0.041248 | 67790001939.488 | 271.160008 |
+| read_write_copy | 1 | 2796202 | 5 | 0.056384 | 49592118331.442 | 396.736947 |
+| write_only | 1 | 2796202 | 5 | 0.032320 | 86516150990.099 | 346.064604 |
+
+## Artifacts
+
+- Current raw data: [benchmark_results.json](./results/tables/benchmark_results.json).
+- Archives with exactly matching JSON content: [20261108_113644Z_remaining_review_fixes.json](./runs/nvidia_geforce_rtx_2080_super/20261108_113644Z_remaining_review_fixes.json).
+- [bandwidth_saturation_gbps_vs_size.png](./results/charts/bandwidth_saturation_gbps_vs_size.png)
+- [bandwidth_saturation_gpu_ms_vs_size.png](./results/charts/bandwidth_saturation_gpu_ms_vs_size.png)
+- [benchmark_summary.png](./results/charts/benchmark_summary.png)
+- [bandwidth_saturation_multi_run_summary.csv](./results/tables/bandwidth_saturation_multi_run_summary.csv)
+- [bandwidth_saturation_plateau_summary.csv](./results/tables/bandwidth_saturation_plateau_summary.csv)
+- [bandwidth_saturation_runs_index.csv](./results/tables/bandwidth_saturation_runs_index.csv)
+- [bandwidth_saturation_status_overview.csv](./results/tables/bandwidth_saturation_status_overview.csv)
+- [bandwidth_saturation_summary.csv](./results/tables/bandwidth_saturation_summary.csv)
+- Omitted 0 unbound CSV/chart files. Linked derived outputs are bound by SHA-256 to verified analyzer/plot code and sources including the exact current raw export.
+
+## Interpretation and limitations
+
+- This is an exploratory collection from one GPU/driver with a small timed sample. Timing differences alone do not establish an architectural cause, statistical significance, or a ranking on other devices.
+- GB/s follows the exported experiment metric definition. Useful payload, modeled shader accesses, and physical memory traffic are different quantities; cross-experiment GB/s comparisons require matching definitions.
+- Timestamp throughput does not distinguish cache-hot replay from external-memory bandwidth.
+- Derived table/chart links require verified content provenance, including source and tool hashes; the table above uses raw rows directly.

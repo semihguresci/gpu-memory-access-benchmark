@@ -34,26 +34,28 @@ The project is intentionally results-first. Every major claim should be backed b
 | Dimension | Baseline |
 | --- | --- |
 | Desktop GPU | `NVIDIA GeForce RTX 2080 SUPER` |
-| API | `Vulkan 1.4.325` |
+| API | `Vulkan 1.4.341`, NVIDIA driver `610.88` |
 | Timing method | GPU timestamp queries |
 | Main metrics | median GPU time, `p95`, effective throughput, effective GB/s |
-| Example data sizes | `32 MiB`, `64 MiB`, `128 MiB`, `512 MiB` |
+| Current refresh | `32 MiB` total scratch, radix sort `128 MiB`; five timed iterations, two warmups |
 | Artifact policy | raw JSON + CSV tables + PNG charts + `results.md` interpretation |
 
 Adreno or other mobile validation is not yet part of the measured baseline. It is explicitly planned as a follow-up so the project can separate desktop-specific effects from broader GPU-memory rules.
 
 ## Current Results
-| Experiment | Headline result | Supporting artifact |
+The current reports use measurement revision `2026-10-23-integrity-fixes` and identify their exact raw exports. Earlier archived ratios describe older workloads and accounting and are not current architectural conclusions. The refresh checks corrected implementations at exploratory sizes; it does not establish a large-working-set bandwidth plateau.
+
+| Experiment | Measured comparison | Supporting artifact |
 | --- | --- | --- |
-| Experiment 06: AoS vs SoA | `SoA` is `28.42x` faster in GPU time and `21.32x` higher in effective bandwidth than `AoS` on the current dataset | [AoS vs SoA results](../experiments/06_aos_vs_soa/results.md) |
-| Experiment 11: Coalesced vs Strided | Coalesced `stride_1` is `89.08x` faster than `stride_2` and still `13.98x` faster than the best measured strided case, `stride_16` | [Coalesced vs Strided results](../experiments/11_coalesced_vs_strided/results.md) |
-| Experiment 14: Read Reuse and Cache Locality | Bounded reuse stays about `1.32x` faster than full-span replay | [Reuse and locality results](../experiments/14_read_reuse_cache_locality/results.md) |
-| Experiment 15: Bandwidth Saturation Sweep | Read-only traffic sustains about `899 GB/s` from `96 MiB` onward; read-write copy sustains about `419 GB/s` | [Bandwidth saturation results](../experiments/15_bandwidth_saturation_sweep/results.md) |
-| Experiment 16: Shared Memory Tiling | The current shared-memory kernel is slightly slower than direct global access across all measured reuse radii | [Shared memory tiling results](../experiments/16_shared_memory_tiling/results.md) |
+| Experiment 06: AoS vs SoA | Matching active field reads/stores and a common useful-byte numerator | [AoS vs SoA results](../experiments/06_aos_vs_soa/results.md) |
+| Experiment 11: Coalesced vs Strided | Stride effects with changing physical span explicitly retained as a limitation | [Coalesced vs Strided results](../experiments/11_coalesced_vs_strided/results.md) |
+| Experiment 14: Read Reuse and Cache Locality | Repeated-address invocation schedules, without a guarantee of temporal execution order | [Reuse and locality results](../experiments/14_read_reuse_cache_locality/results.md) |
+| Experiment 15: Bandwidth Saturation Sweep | Requested-byte read/write/copy throughput over the measured size range | [Bandwidth saturation results](../experiments/15_bandwidth_saturation_sweep/results.md) |
+| Experiment 16: Shared Memory Tiling | Direct/shared stencil variants at matching radius and output semantics | [Shared memory tiling results](../experiments/16_shared_memory_tiling/results.md) |
 
 ## Key Findings
-- Coalescing is the single strongest good-path rule in the current dataset.
-- Layout decisions matter at an order-of-magnitude scale, not as a minor optimization.
+- Layout and access-pattern comparisons need matching useful work, bytes, and validation semantics.
+- Requested-byte throughput is distinct from observed external-memory traffic, particularly with reuse.
 - Locality matters, but timing-only cache studies need careful scoping and explicit caveats.
 - Shared memory must be justified with measured reuse and occupancy tradeoffs. It is not a default win.
 - Saturation studies need size sweeps. Single-size microbenchmarks are too easy to misread.

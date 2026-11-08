@@ -6,12 +6,23 @@ import argparse
 import json
 import re
 from datetime import datetime, timezone
+import sys
 from pathlib import Path
 from typing import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+# Allow direct invocation from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from analysis_integrity import (
+    measurement_revision,
+    preferred_run_id,
+    select_compatible_runs,
+    validated_rows,
+    write_analysis_provenance,
+)
 
 EXPERIMENT_ID = "01_dispatch_basics"
 
@@ -21,6 +32,8 @@ RUNS_DIR = ROOT / "runs"
 TABLES_DIR = ROOT / "results" / "tables"
 CHARTS_DIR = ROOT / "results" / "charts"
 CURRENT_RUN_JSON = TABLES_DIR / "benchmark_results.json"
+DEVICE_COLUMNS = ["gpu_name", "driver_version", "vulkan_api_version", "device_id", "device_slug"]
+RUN_CONFIGURATION_COLUMNS = ["measurement_revision", "validation_enabled", "warmup_iterations", "timed_iterations"]
 
 
 def _slugify(value: str, fallback: str = "unknown") -> str:
@@ -46,18 +59,21 @@ def _parse_iso8601(value: str) -> datetime | None:
 def _format_problem_size_ticks(values: np.ndarray) -> list[str]:
     labels: list[str] = []
     for value in values:
-        exponent = int(round(np.log2(value)))
-        labels.append(f"2^{exponent}")
+        count = int(value)
+        if count > 0 and count & (count - 1) == 0:
+            labels.append(f"2^{count.bit_length() - 1}")
+        else:
+            labels.append(f"{count:,}")
     return labels
 
 
-def _discover_run_files(runs_dir: Path, include_current: bool) -> list[Path]:
+def _discover_run_files(runs_dir: Path, include_current: bool, revision: str | None = None) -> list[Path]:
     paths = sorted(runs_dir.rglob("*.json")) if runs_dir.exists() else []
     if include_current and CURRENT_RUN_JSON.exists():
         current_resolved = CURRENT_RUN_JSON.resolve()
         if all(path.resolve() != current_resolved for path in paths):
             paths.append(CURRENT_RUN_JSON)
-    return paths
+    return select_compatible_runs(paths, current_path=CURRENT_RUN_JSON if include_current else None, revision=revision)
 
 
 def _relative_run_id(path: Path) -> str:
@@ -86,6 +102,7 @@ def _build_run_record(path: Path, payload: dict, frame: pd.DataFrame) -> dict:
     run_id = _relative_run_id(path)
 
     return {
+        "measurement_revision": measurement_revision(metadata),
         "run_id": run_id,
         "run_file": run_id,
         "gpu_name": gpu_name,
@@ -98,8 +115,6 @@ def _build_run_record(path: Path, payload: dict, frame: pd.DataFrame) -> dict:
         "exported_at_dt": exported_at_dt,
         "device_id": device_id,
         "device_slug": device_slug,
-        "run_signature": f"{gpu_name}|{driver_version}|{vulkan_api_version}|"
-        f"{exported_at_utc or exported_at_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}|{int(frame.shape[0])}",
         "row_count": int(frame.shape[0]),
         "correctness_pass_rate": float(frame["correctness_pass"].mean()),
         "problem_size_min": int(frame["problem_size"].min()),
@@ -115,7 +130,7 @@ def _load_dispatch_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None, N
         print(f"[warn] Skipping unreadable JSON: {path} ({exc})")
         return None, None
 
-    rows = payload.get("rows", [])
+    rows = validated_rows(payload, "01_dispatch_basics", path)
     if not isinstance(rows, list) or not rows:
         return None, None
 
@@ -147,12 +162,13 @@ def _load_dispatch_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None, N
         frame["notes"] = ""
 
     if "correctness_pass" in frame.columns:
-        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.lower().isin(["1", "true", "yes"])
+        frame["correctness_pass"] = frame["correctness_pass"].astype(str).str.strip().str.lower().isin(["1", "true", "yes"])
     else:
         frame["correctness_pass"] = False
 
     run_record = _build_run_record(path, payload, frame)
     for key in [
+        "measurement_revision",
         "run_id",
         "run_file",
         "gpu_name",
@@ -174,17 +190,12 @@ def _load_dispatch_rows(path: Path) -> tuple[pd.DataFrame, dict] | tuple[None, N
 def _load_all_runs(paths: Iterable[Path]) -> tuple[pd.DataFrame, pd.DataFrame]:
     frames: list[pd.DataFrame] = []
     run_records: list[dict] = []
-    seen_signatures: set[str] = set()
 
+    # Discovery deduplicates complete payloads; timestamps do not identify runs.
     for path in paths:
         frame, run_record = _load_dispatch_rows(path)
         if frame is None or run_record is None:
             continue
-        run_signature = run_record["run_signature"]
-        if run_signature in seen_signatures:
-            print(f"[info] Skipping duplicate run payload: {_relative_run_id(path)}")
-            continue
-        seen_signatures.add(run_signature)
         frames.append(frame)
         run_records.append(run_record)
 
@@ -203,12 +214,15 @@ def _quantile_95(series: pd.Series) -> float:
 
 def _build_run_summary(all_rows: pd.DataFrame) -> pd.DataFrame:
     group_columns = [
+        "measurement_revision",
         "run_id",
         "run_file",
         "gpu_name",
         "driver_version",
         "vulkan_api_version",
         "validation_enabled",
+        "warmup_iterations",
+        "timed_iterations",
         "exported_at_utc",
         "device_id",
         "device_slug",
@@ -261,12 +275,13 @@ def _best_dispatch_table(summary: pd.DataFrame, group_columns: list[str]) -> pd.
     return pd.DataFrame(records)
 
 
-def _write_table(frame: pd.DataFrame, output_path: Path) -> None:
+def _write_table(frame: pd.DataFrame, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output_path, index=False)
+    return output_path
 
 
-def _plot_time_throughput(summary: pd.DataFrame, output_path: Path, title: str) -> None:
+def _plot_time_throughput(summary: pd.DataFrame, output_path: Path, title: str) -> Path | None:
     if summary.empty:
         return
 
@@ -322,9 +337,10 @@ def _plot_time_throughput(summary: pd.DataFrame, output_path: Path, title: str) 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
-def _plot_cross_device_comparison(device_summary: pd.DataFrame, output_path: Path) -> None:
+def _plot_cross_device_comparison(device_summary: pd.DataFrame, output_path: Path) -> Path | None:
     if device_summary.empty:
         return
 
@@ -341,18 +357,18 @@ def _plot_cross_device_comparison(device_summary: pd.DataFrame, output_path: Pat
     high_dispatch = dispatch_counts[-1]
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharex=True)
-    for device_id, device_frame in subset.groupby("device_id"):
+    for device_label, _, device_frame in _device_configuration_groups(subset):
         low_curve = device_frame[device_frame["dispatch_count"] == low_dispatch].sort_values("problem_size")
         high_curve = device_frame[device_frame["dispatch_count"] == high_dispatch].sort_values("problem_size")
         if low_curve.empty or high_curve.empty:
             continue
 
-        axes[0].plot(low_curve["problem_size"], low_curve["gpu_ms_median"], marker="o", label=device_id)
+        axes[0].plot(low_curve["problem_size"], low_curve["gpu_ms_median"], marker="o", label=device_label)
         axes[1].plot(
             high_curve["problem_size"],
             high_curve["throughput_median"] / 1.0e9,
             marker="o",
-            label=device_id,
+            label=device_label,
         )
 
     problem_sizes = np.array(sorted(subset["problem_size"].unique().tolist()), dtype=float)
@@ -367,6 +383,7 @@ def _plot_cross_device_comparison(device_summary: pd.DataFrame, output_path: Pat
     axes[0].set_xticks(problem_sizes)
     axes[0].set_xticklabels(_format_problem_size_ticks(problem_sizes), rotation=30)
     axes[0].grid(True, alpha=0.3)
+    axes[0].legend(title="device and run settings", fontsize=8)
 
     axes[1].set_title(f"{variant}: throughput profile (dispatch_count={high_dispatch})")
     axes[1].set_ylabel("throughput (Gelem/s)")
@@ -375,26 +392,18 @@ def _plot_cross_device_comparison(device_summary: pd.DataFrame, output_path: Pat
     axes[1].set_xticks(problem_sizes)
     axes[1].set_xticklabels(_format_problem_size_ticks(problem_sizes), rotation=30)
     axes[1].grid(True, alpha=0.3)
-    axes[1].legend(title="device", fontsize=8)
+    axes[1].legend(title="device and run settings", fontsize=8)
 
     fig.suptitle("Experiment 01 Cross-Device Comparison", fontsize=14)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_device_summary(run_summary: pd.DataFrame) -> pd.DataFrame:
-    group_columns = [
-        "gpu_name",
-        "driver_version",
-        "vulkan_api_version",
-        "device_id",
-        "device_slug",
-        "variant",
-        "problem_size",
-        "dispatch_count",
-    ]
+    group_columns = DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS + ["variant", "problem_size", "dispatch_count"]
     device_summary = (
         run_summary.groupby(group_columns, as_index=False)
         .agg(
@@ -406,7 +415,7 @@ def _build_device_summary(run_summary: pd.DataFrame) -> pd.DataFrame:
             correctness_pass_rate=("correctness_pass_rate", "mean"),
             run_count=("run_id", "nunique"),
         )
-        .sort_values(["gpu_name", "driver_version", "variant", "problem_size", "dispatch_count"])
+        .sort_values(group_columns)
         .reset_index(drop=True)
     )
     return device_summary
@@ -419,82 +428,81 @@ def _build_operation_ratio_table(device_summary: pd.DataFrame) -> pd.DataFrame:
 
     write_frame = device_summary[device_summary["variant"] == "contiguous_write"].copy()
     noop_frame = device_summary[device_summary["variant"] == "noop"].copy()
-    join_columns = [
-        "gpu_name",
-        "driver_version",
-        "vulkan_api_version",
-        "device_id",
-        "device_slug",
-        "problem_size",
-        "dispatch_count",
-    ]
+    join_columns = DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS + ["problem_size", "dispatch_count"]
     merged = write_frame.merge(
         noop_frame,
         on=join_columns,
         suffixes=("_write", "_noop"),
         how="inner",
+        validate="one_to_one",
     )
     if merged.empty:
         return pd.DataFrame()
 
     merged["gpu_ms_ratio_write_over_noop"] = merged["gpu_ms_median_write"] / merged["gpu_ms_median_noop"]
     merged["throughput_ratio_write_over_noop"] = (
-        merged["throughput_median_write"] / merged["throughput_median_noop"]
+        merged["throughput_median_write"] / merged["throughput_median_noop"].where(merged["throughput_median_noop"] > 0.0)
     )
 
     columns = join_columns + [
         "gpu_ms_ratio_write_over_noop",
         "throughput_ratio_write_over_noop",
     ]
-    return merged[columns].sort_values(["gpu_name", "problem_size", "dispatch_count"]).reset_index(drop=True)
+    return merged[columns].sort_values(join_columns).reset_index(drop=True)
 
 
-def _plot_operation_ratio_by_device(operation_ratios: pd.DataFrame, output_path: Path) -> None:
+def _plot_operation_ratio_by_device(operation_ratios: pd.DataFrame, output_path: Path) -> Path | None:
     if operation_ratios.empty:
         return
 
     aggregate = (
-        operation_ratios.groupby(["device_id", "dispatch_count"], as_index=False)
+        operation_ratios.groupby(DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS + ["dispatch_count"], as_index=False)
         .agg(
             gpu_ms_ratio_write_over_noop=("gpu_ms_ratio_write_over_noop", "median"),
             throughput_ratio_write_over_noop=("throughput_ratio_write_over_noop", "median"),
         )
-        .sort_values(["device_id", "dispatch_count"])
+        .sort_values(DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS + ["dispatch_count"])
     )
     if aggregate.empty:
         return
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharex=True)
-    for device_id, frame in aggregate.groupby("device_id"):
+    for device_label, _, frame in _device_configuration_groups(aggregate):
         axes[0].plot(
             frame["dispatch_count"],
             frame["gpu_ms_ratio_write_over_noop"],
             marker="o",
-            label=device_id,
+            label=device_label,
         )
-        axes[1].plot(
-            frame["dispatch_count"],
-            frame["throughput_ratio_write_over_noop"],
-            marker="o",
-            label=device_id,
-        )
+        if frame["throughput_ratio_write_over_noop"].notna().any():
+            axes[1].plot(
+                frame["dispatch_count"],
+                frame["throughput_ratio_write_over_noop"],
+                marker="o",
+                label=device_label,
+            )
 
     axes[0].set_title("GPU time ratio (contiguous_write / noop)")
     axes[0].set_xlabel("dispatch_count")
     axes[0].set_ylabel("ratio")
     axes[0].grid(True, alpha=0.3)
+    axes[0].legend(title="device and run settings", fontsize=8)
 
+    if not aggregate["throughput_ratio_write_over_noop"].notna().any():
+        axes[1].text(0.5, 0.5, "Undefined: no-op has no useful payload.", ha="center", va="center", transform=axes[1].transAxes)
     axes[1].set_title("Throughput ratio (contiguous_write / noop)")
     axes[1].set_xlabel("dispatch_count")
     axes[1].set_ylabel("ratio")
     axes[1].grid(True, alpha=0.3)
-    axes[1].legend(title="device", fontsize=8)
+    if aggregate["throughput_ratio_write_over_noop"].notna().any():
+        axes[1].legend(title="device and run settings", fontsize=8)
 
     fig.suptitle("Experiment 01 Operation Cost Delta by Device", fontsize=14)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_representative_points_table(latest_summary: pd.DataFrame) -> pd.DataFrame:
@@ -535,7 +543,7 @@ def _build_representative_points_table(latest_summary: pd.DataFrame) -> pd.DataF
     ]
 
 
-def _plot_representative_points(points: pd.DataFrame, output_path: Path) -> None:
+def _plot_representative_points(points: pd.DataFrame, output_path: Path) -> Path | None:
     if points.empty:
         return
 
@@ -565,6 +573,7 @@ def _plot_representative_points(points: pd.DataFrame, output_path: Path) -> None
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_ratio_summary_table(latest_summary: pd.DataFrame) -> pd.DataFrame:
@@ -590,7 +599,7 @@ def _build_ratio_summary_table(latest_summary: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     merged["gpu_time_ratio"] = merged["gpu_ms_median_write"] / merged["gpu_ms_median_noop"]
-    merged["throughput_ratio"] = merged["throughput_median_write"] / merged["throughput_median_noop"]
+    merged["throughput_ratio"] = merged["throughput_median_write"] / merged["throughput_median_noop"].where(merged["throughput_median_noop"] > 0.0)
     summary = (
         merged.groupby("dispatch_count", as_index=False)
         .agg(
@@ -608,7 +617,7 @@ def _build_ratio_summary_table(latest_summary: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def _plot_ratio_summary(summary: pd.DataFrame, output_path: Path) -> None:
+def _plot_ratio_summary(summary: pd.DataFrame, output_path: Path) -> Path | None:
     if summary.empty:
         return
 
@@ -617,7 +626,10 @@ def _plot_ratio_summary(summary: pd.DataFrame, output_path: Path) -> None:
 
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.bar(x - width / 2.0, summary["gpu_time_ratio"], width=width, label="GPU Time Ratio")
-    ax.bar(x + width / 2.0, summary["throughput_ratio"], width=width, label="Throughput Ratio")
+    if summary["throughput_ratio"].notna().any():
+        ax.bar(x + width / 2.0, summary["throughput_ratio"], width=width, label="Throughput Ratio")
+    else:
+        ax.text(0.02, 0.98, "Throughput ratio undefined: no-op has no useful payload.", va="top", transform=ax.transAxes)
     ax.set_xticks(x)
     ax.set_xticklabels([str(int(value)) for value in summary["dispatch_count"]])
     ax.set_xlabel("dispatch_count")
@@ -630,6 +642,7 @@ def _plot_ratio_summary(summary: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_peak_throughput_table(latest_summary: pd.DataFrame) -> pd.DataFrame:
@@ -662,7 +675,7 @@ def _build_peak_throughput_table(latest_summary: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(records).sort_values("variant").reset_index(drop=True)
 
 
-def _plot_peak_throughput(peaks: pd.DataFrame, output_path: Path) -> None:
+def _plot_peak_throughput(peaks: pd.DataFrame, output_path: Path) -> Path | None:
     if peaks.empty:
         return
 
@@ -692,6 +705,7 @@ def _plot_peak_throughput(peaks: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_status_overview_table(latest_rows: pd.DataFrame) -> pd.DataFrame:
@@ -724,7 +738,7 @@ def _build_status_overview_table(latest_rows: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _plot_status_overview(status: pd.DataFrame, output_path: Path) -> None:
+def _plot_status_overview(status: pd.DataFrame, output_path: Path) -> Path | None:
     if status.empty:
         return
 
@@ -762,6 +776,7 @@ def _plot_status_overview(status: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
 
 
 def _build_test_setup_table(latest_rows: pd.DataFrame, latest_run_info: pd.Series) -> pd.DataFrame:
@@ -796,7 +811,7 @@ def _build_test_setup_table(latest_rows: pd.DataFrame, latest_run_info: pd.Serie
     return pd.DataFrame(records)
 
 
-def _plot_test_setup_overview(test_setup: pd.DataFrame, output_path: Path) -> None:
+def _plot_test_setup_overview(test_setup: pd.DataFrame, output_path: Path) -> Path | None:
     if test_setup.empty:
         return
 
@@ -824,27 +839,40 @@ def _plot_test_setup_overview(test_setup: pd.DataFrame, output_path: Path) -> No
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+    return output_path
+
+
+def _device_configuration_groups(summary: pd.DataFrame):
+    """Keep every curve and per-device chart within one comparable run configuration."""
+    for _, frame in summary.groupby(DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS, sort=True):
+        row = frame.iloc[0]
+        validation = "enabled" if row["validation_enabled"] else "disabled"
+        settings_label = (
+            f"validation {validation}, warmup {row['warmup_iterations']}, timed {row['timed_iterations']}"
+        )
+        label = f"{row['device_id']} | {settings_label}"
+        slug = row["device_slug"]
+        device_configurations = summary[summary["device_id"] == row["device_id"]][RUN_CONFIGURATION_COLUMNS]
+        if len(device_configurations.drop_duplicates()) > 1:
+            slug += "_" + _slugify(f"{row['measurement_revision']}_{settings_label}")
+        yield label, slug, frame
 
 
 def _build_chart_index(device_summary: pd.DataFrame) -> pd.DataFrame:
     if device_summary.empty:
-        return pd.DataFrame(columns=["device_id", "device_slug", "chart"])
+        return pd.DataFrame(columns=DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS + ["chart"])
 
     records: list[dict] = []
-    for device_id, frame in device_summary.groupby("device_id"):
-        device_slug = frame["device_slug"].iloc[0]
-        chart_name = f"dispatch_basics_{device_slug}_time_throughput.png"
-        records.append(
-            {
-                "device_id": device_id,
-                "device_slug": device_slug,
-                "chart": f"results/charts/{chart_name}",
-            }
-        )
-    return pd.DataFrame(records).sort_values("device_id").reset_index(drop=True)
+    for _, chart_slug, frame in _device_configuration_groups(device_summary):
+        record = frame.iloc[0][DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS].to_dict()
+        record["chart"] = f"results/charts/dispatch_basics_{chart_slug}_time_throughput.png"
+        records.append(record)
+    return pd.DataFrame(records).sort_values(DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS).reset_index(drop=True)
 
 
 def main() -> None:
+    generated_tables: list[Path] = []
+    generated_charts: list[Path | None] = []
     parser = argparse.ArgumentParser(description="Analyze Experiment 01 dispatch basics runs across devices.")
     parser.add_argument(
         "--runs-dir",
@@ -857,9 +885,13 @@ def main() -> None:
         action="store_true",
         help="Do not include results/tables/benchmark_results.json as an implicit run.",
     )
+    parser.add_argument(
+        "--measurement-revision",
+        help="Analyze one revision only (default: current run, otherwise newest archive); use legacy-unversioned for old runs.",
+    )
     args = parser.parse_args()
 
-    run_files = _discover_run_files(args.runs_dir, include_current=not args.skip_current)
+    run_files = _discover_run_files(args.runs_dir, include_current=not args.skip_current, revision=args.measurement_revision)
     all_rows, run_index = _load_all_runs(run_files)
     if all_rows.empty or run_index.empty:
         raise FileNotFoundError(
@@ -870,13 +902,13 @@ def main() -> None:
     TABLES_DIR.mkdir(parents=True, exist_ok=True)
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    run_index_export = run_index.drop(columns=["exported_at_dt", "run_signature"]).copy()
-    _write_table(run_index_export, TABLES_DIR / "dispatch_basics_runs_index.csv")
+    run_index_export = run_index.drop(columns=["exported_at_dt"]).copy()
+    generated_tables.append(_write_table(run_index_export, TABLES_DIR / "dispatch_basics_runs_index.csv"))
 
     run_summary = _build_run_summary(all_rows)
-    _write_table(run_summary, TABLES_DIR / "dispatch_basics_multi_run_summary.csv")
+    generated_tables.append(_write_table(run_summary, TABLES_DIR / "dispatch_basics_multi_run_summary.csv"))
 
-    latest_run_id = run_index.sort_values(["exported_at_dt", "run_id"]).iloc[-1]["run_id"]
+    latest_run_id = preferred_run_id(run_index, CURRENT_RUN_JSON if not args.skip_current else None, ROOT)
     latest_run_info = run_index[run_index["run_id"] == latest_run_id].iloc[0]
     latest_rows = all_rows[all_rows["run_id"] == latest_run_id].copy()
     latest_summary = run_summary[run_summary["run_id"] == latest_run_id].copy()
@@ -895,10 +927,10 @@ def main() -> None:
             "sample_count",
         ]
     ].sort_values(["variant", "problem_size", "dispatch_count"])
-    _write_table(latest_summary_simple, TABLES_DIR / "dispatch_basics_summary.csv")
+    generated_tables.append(_write_table(latest_summary_simple, TABLES_DIR / "dispatch_basics_summary.csv"))
 
     latest_best_dispatch = _best_dispatch_table(latest_summary_simple, ["variant", "problem_size"])
-    _write_table(latest_best_dispatch, TABLES_DIR / "dispatch_basics_best_dispatch.csv")
+    generated_tables.append(_write_table(latest_best_dispatch, TABLES_DIR / "dispatch_basics_best_dispatch.csv"))
 
     gpu_ms_pivot = latest_summary_simple.pivot_table(
         index="problem_size",
@@ -911,67 +943,69 @@ def main() -> None:
         values="throughput_median",
     ).sort_index()
     gpu_ms_pivot.to_csv(TABLES_DIR / "dispatch_basics_gpu_ms_pivot.csv")
+    generated_tables.append(TABLES_DIR / "dispatch_basics_gpu_ms_pivot.csv")
     throughput_pivot.to_csv(TABLES_DIR / "dispatch_basics_throughput_pivot.csv")
+    generated_tables.append(TABLES_DIR / "dispatch_basics_throughput_pivot.csv")
 
     device_summary = _build_device_summary(run_summary)
-    _write_table(device_summary, TABLES_DIR / "dispatch_basics_device_summary.csv")
+    generated_tables.append(_write_table(device_summary, TABLES_DIR / "dispatch_basics_device_summary.csv"))
 
     device_best_dispatch = _best_dispatch_table(
         device_summary,
-        ["gpu_name", "driver_version", "vulkan_api_version", "variant", "problem_size"],
+        DEVICE_COLUMNS + RUN_CONFIGURATION_COLUMNS + ["variant", "problem_size"],
     )
-    _write_table(device_best_dispatch, TABLES_DIR / "dispatch_basics_best_dispatch_by_device.csv")
+    generated_tables.append(_write_table(device_best_dispatch, TABLES_DIR / "dispatch_basics_best_dispatch_by_device.csv"))
 
     operation_ratios = _build_operation_ratio_table(device_summary)
     if not operation_ratios.empty:
-        _write_table(operation_ratios, TABLES_DIR / "dispatch_basics_operation_ratio_by_device.csv")
+        generated_tables.append(_write_table(operation_ratios, TABLES_DIR / "dispatch_basics_operation_ratio_by_device.csv"))
 
     chart_index = _build_chart_index(device_summary)
-    _write_table(chart_index, TABLES_DIR / "dispatch_basics_device_chart_index.csv")
+    generated_tables.append(_write_table(chart_index, TABLES_DIR / "dispatch_basics_device_chart_index.csv"))
 
     representative_points = _build_representative_points_table(latest_summary_simple)
     if not representative_points.empty:
-        _write_table(representative_points, TABLES_DIR / "dispatch_basics_representative_points.csv")
-        _plot_representative_points(representative_points, CHARTS_DIR / "dispatch_basics_representative_points.png")
+        generated_tables.append(_write_table(representative_points, TABLES_DIR / "dispatch_basics_representative_points.csv"))
+        generated_charts.append(_plot_representative_points(representative_points, CHARTS_DIR / "dispatch_basics_representative_points.png"))
 
     ratio_summary = _build_ratio_summary_table(latest_summary_simple)
     if not ratio_summary.empty:
-        _write_table(ratio_summary, TABLES_DIR / "dispatch_basics_ratio_summary.csv")
-        _plot_ratio_summary(ratio_summary, CHARTS_DIR / "dispatch_basics_ratio_summary.png")
+        generated_tables.append(_write_table(ratio_summary, TABLES_DIR / "dispatch_basics_ratio_summary.csv"))
+        generated_charts.append(_plot_ratio_summary(ratio_summary, CHARTS_DIR / "dispatch_basics_ratio_summary.png"))
 
     peak_throughput = _build_peak_throughput_table(latest_summary_simple)
     if not peak_throughput.empty:
-        _write_table(peak_throughput, TABLES_DIR / "dispatch_basics_peak_throughput.csv")
-        _plot_peak_throughput(peak_throughput, CHARTS_DIR / "dispatch_basics_peak_throughput.png")
+        generated_tables.append(_write_table(peak_throughput, TABLES_DIR / "dispatch_basics_peak_throughput.csv"))
+        generated_charts.append(_plot_peak_throughput(peak_throughput, CHARTS_DIR / "dispatch_basics_peak_throughput.png"))
 
     status_overview = _build_status_overview_table(latest_rows)
     if not status_overview.empty:
-        _write_table(status_overview, TABLES_DIR / "dispatch_basics_status_overview.csv")
-        _plot_status_overview(status_overview, CHARTS_DIR / "dispatch_basics_status_overview.png")
+        generated_tables.append(_write_table(status_overview, TABLES_DIR / "dispatch_basics_status_overview.csv"))
+        generated_charts.append(_plot_status_overview(status_overview, CHARTS_DIR / "dispatch_basics_status_overview.png"))
 
     test_setup = _build_test_setup_table(latest_rows, latest_run_info)
     if not test_setup.empty:
-        _write_table(test_setup, TABLES_DIR / "dispatch_basics_test_setup.csv")
-        _plot_test_setup_overview(test_setup, CHARTS_DIR / "dispatch_basics_test_setup.png")
+        generated_tables.append(_write_table(test_setup, TABLES_DIR / "dispatch_basics_test_setup.csv"))
+        generated_charts.append(_plot_test_setup_overview(test_setup, CHARTS_DIR / "dispatch_basics_test_setup.png"))
 
     latest_device_label = latest_summary["device_id"].iloc[0]
-    _plot_time_throughput(
+    generated_charts.append(_plot_time_throughput(
         latest_summary_simple,
         CHARTS_DIR / "dispatch_basics_time_throughput.png",
         f"Experiment 01 Dispatch Basics ({latest_device_label})",
-    )
+    ))
 
-    for device_id, frame in device_summary.groupby("device_id"):
-        device_slug = frame["device_slug"].iloc[0]
-        _plot_time_throughput(
+    for device_label, chart_slug, frame in _device_configuration_groups(device_summary):
+        generated_charts.append(_plot_time_throughput(
             frame,
-            CHARTS_DIR / f"dispatch_basics_{device_slug}_time_throughput.png",
-            f"Experiment 01 Dispatch Basics ({device_id})",
-        )
+            CHARTS_DIR / f"dispatch_basics_{chart_slug}_time_throughput.png",
+            f"Experiment 01 Dispatch Basics ({device_label})",
+        ))
 
-    _plot_cross_device_comparison(device_summary, CHARTS_DIR / "dispatch_basics_cross_device_comparison.png")
-    _plot_operation_ratio_by_device(operation_ratios, CHARTS_DIR / "dispatch_basics_operation_ratio_by_device.png")
+    generated_charts.append(_plot_cross_device_comparison(device_summary, CHARTS_DIR / "dispatch_basics_cross_device_comparison.png"))
+    generated_charts.append(_plot_operation_ratio_by_device(operation_ratios, CHARTS_DIR / "dispatch_basics_operation_ratio_by_device.png"))
 
+    write_analysis_provenance(TABLES_DIR, run_files, EXPERIMENT_ID, derived_tables=generated_tables, derived_charts=generated_charts, analysis_tools=[Path(__file__)])
     print(f"Processed runs: {len(run_index)}")
     print(f"Latest run: {latest_run_id}")
     print(f"Devices in dataset: {run_index['device_id'].nunique()}")

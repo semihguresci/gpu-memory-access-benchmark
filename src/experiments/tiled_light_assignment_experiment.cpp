@@ -300,21 +300,20 @@ PreparedCaseData prepare_case_data(const std::vector<LightRecord>& lights, uint3
 
 uint64_t compute_estimated_global_traffic_bytes(uint32_t light_count, uint64_t overlap_count, AssignmentMode mode) {
     if (mode == AssignmentMode::LightAtomic) {
-        // Light-centric path reads each light once and writes one tile counter
-        // plus one stats counter for every actual overlap.
+        // One light read and one useful tile atomic per overlap. Model each
+        // uint32 atomic as a four-byte read plus a four-byte write; this is a
+        // shader-operation estimate, not observed cache/DRAM traffic.
         const uint64_t read_light_bytes = static_cast<uint64_t>(light_count) * sizeof(LightRecord);
         const uint64_t overlap_atomic_bytes = overlap_count * sizeof(uint32_t) * 2ULL;
-        return read_light_bytes + overlap_atomic_bytes;
+        return read_light_bytes + overlap_atomic_bytes + sizeof(uint32_t);
     }
 
     // Tile-centric paths scan the whole light list once per tile. This estimate
-    // is deliberately larger than the logical payload and is the metric exported
-    // as GB/s for apples-to-apples runtime interpretation.
+    // includes the repeated requested reads; cache/DRAM traffic is unobserved.
     const uint64_t read_light_bytes =
         static_cast<uint64_t>(light_count) * static_cast<uint64_t>(kTileCount) * sizeof(LightRecord);
     const uint64_t tile_output_bytes = static_cast<uint64_t>(kTileCount) * sizeof(uint32_t);
-    const uint64_t stats_atomic_bytes = static_cast<uint64_t>(kTileCount) * sizeof(uint32_t);
-    return read_light_bytes + tile_output_bytes + stats_atomic_bytes;
+    return read_light_bytes + tile_output_bytes + sizeof(uint32_t);
 }
 
 uint64_t compute_logical_payload_bytes(uint32_t light_count) {
@@ -425,7 +424,7 @@ void update_descriptor_set(VulkanContext& context, const BufferResources& buffer
     // Shader binding contract:
     //   0 -> light records consumed by every assignment path
     //   1 -> one tile counter per screen tile
-    //   2 -> stats[0] overlap total, stats[1] assignment-mode echo
+    //   2 -> reserved stats[0], stats[1] assignment-mode echo
     VulkanComputeUtils::update_descriptor_set_buffers(context.device(), descriptor_set,
                                                       {
                                                           VulkanComputeUtils::DescriptorBufferBindingUpdate{
@@ -530,6 +529,14 @@ bool validate_input_values(const LightRecord* input_values, const std::vector<Li
     return std::memcmp(input_values, expected.data(), static_cast<size_t>(light_count) * sizeof(LightRecord)) == 0;
 }
 
+uint64_t total_tile_overlaps(const uint32_t* tile_counts) {
+    uint64_t total = 0U;
+    for (uint32_t tile = 0U; tile < kTileCount; ++tile) {
+        total += tile_counts[tile];
+    }
+    return total;
+}
+
 bool validate_output_values(const uint32_t* tile_counts, const uint32_t* stats, const PreparedCaseData& prepared,
                             AssignmentMode mode) {
     if (tile_counts == nullptr || stats == nullptr) {
@@ -541,7 +548,7 @@ bool validate_output_values(const uint32_t* tile_counts, const uint32_t* stats, 
             return false;
         }
     }
-    if (static_cast<uint64_t>(stats[0]) != prepared.expected_total_overlaps) {
+    if (total_tile_overlaps(tile_counts) != prepared.expected_total_overlaps || stats[0] != 0U) {
         return false;
     }
     if (stats[1] != static_cast<uint32_t>(mode)) {
@@ -563,9 +570,12 @@ std::string describe_validation_failure(const uint32_t* tile_counts, const uint3
         }
     }
 
-    if (static_cast<uint64_t>(stats[0]) != prepared.expected_total_overlaps) {
+    if (total_tile_overlaps(tile_counts) != prepared.expected_total_overlaps) {
         return "overlap_total_expected_" + std::to_string(prepared.expected_total_overlaps) + "_actual_" +
-               std::to_string(stats[0]);
+               std::to_string(total_tile_overlaps(tile_counts));
+    }
+    if (stats[0] != 0U) {
+        return "reserved_stats_word_modified";
     }
 
     if (stats[1] != static_cast<uint32_t>(mode)) {
@@ -608,6 +618,7 @@ double run_dispatch(VulkanContext& context, const PipelineResources& pipeline_re
         vkCmdPushConstants(command_buffer, pipeline_resources.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0U,
                            static_cast<uint32_t>(sizeof(constants)), &constants);
         vkCmdDispatch(command_buffer, group_count_x, 1U, 1U);
+        VulkanComputeUtils::record_compute_write_to_host_read_barrier(command_buffer);
     });
 }
 
@@ -630,6 +641,9 @@ void record_case_notes(std::string& notes, AssignmentMode mode, DistributionKind
     append_note(notes, "logical_payload_bytes=" + std::to_string(logical_payload_bytes));
     append_note(notes, "estimated_global_total_bytes=" + std::to_string(estimated_global_total_bytes));
     append_note(notes, "gbps_mode=estimated_global_bytes");
+    append_note(notes, "overlap_statistics=cpu_sum_of_validated_tile_counts_outside_gpu_timing");
+    append_note(notes, "atomic_byte_model=4_byte_read+4_byte_write_per_tile_increment");
+    append_note(notes, "global_statistics_atomics=0");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
     }
@@ -652,7 +666,6 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
     }
 
     std::copy_n(case_lights.begin(), light_count, light_values);
-    const bool input_valid = validate_input_values(light_values, case_lights, light_count);
 
     // assignment_mode values match the shader branches:
     //   0 = per-light atomic update
@@ -678,8 +691,9 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         const double dispatch_ms = run_dispatch(context, pipeline_resources, constants, max_dispatch_groups_x);
         if (verbose_progress) {
             const bool dispatch_ok = std::isfinite(dispatch_ms);
-            const bool correctness_pass =
-                dispatch_ok && input_valid && validate_output_values(tile_counts, stats, prepared, mode);
+            const bool correctness_pass = dispatch_ok &&
+                                          validate_input_values(light_values, case_lights, light_count) &&
+                                          validate_output_values(tile_counts, stats, prepared, mode);
             std::cout << "[" << kExperimentId << "] warmup " << (warmup + 1U) << "/" << runner.warmup_iterations()
                       << " variant=" << make_variant_name(mode, distribution) << ", light_count=" << light_count
                       << ", dispatch_ms=" << dispatch_ms << ", correctness=" << (correctness_pass ? "pass" : "fail")
@@ -695,14 +709,22 @@ bool run_case(VulkanContext& context, const BenchmarkRunner& runner, const Pipel
         const std::chrono::duration<double, std::milli> end_to_end_ms = end - start;
 
         const bool dispatch_ok = std::isfinite(dispatch_ms);
-        const bool correctness_pass =
-            dispatch_ok && input_valid && validate_output_values(tile_counts, stats, prepared, mode);
+        const bool correctness_pass = dispatch_ok && validate_input_values(light_values, case_lights, light_count) &&
+                                      validate_output_values(tile_counts, stats, prepared, mode);
         output.all_points_correct = output.all_points_correct && correctness_pass;
         dispatch_samples.push_back(dispatch_ms);
 
         std::string notes;
+        append_note(notes, "gpu_time_scope=kernel_work_and_host_visibility_dependency");
         record_case_notes(notes, mode, distribution, light_count, prepared, logical_payload_bytes,
                           estimated_global_total_bytes, correctness_pass, dispatch_ok);
+        append_note(notes, "observed_total_overlaps=" + std::to_string(total_tile_overlaps(tile_counts)));
+        append_note(notes, "light_memory_type=" + std::to_string(buffers.light_buffer.memory_type_index));
+        append_note(notes, "light_heap=" + std::to_string(buffers.light_buffer.heap_index));
+        append_note(notes, "light_memory_flags=" + std::to_string(buffers.light_buffer.memory_properties));
+        append_note(notes, "tile_count_memory_type=" + std::to_string(buffers.tile_count_buffer.memory_type_index));
+        append_note(notes, "tile_count_heap=" + std::to_string(buffers.tile_count_buffer.heap_index));
+        append_note(notes, "tile_count_memory_flags=" + std::to_string(buffers.tile_count_buffer.memory_properties));
 
         if (verbose_progress) {
             std::cout << "[" << kExperimentId << "] timed " << (iteration + 1U) << "/" << runner.timed_iterations()
