@@ -14,7 +14,7 @@ struct BenchmarkExportMetadata {
     bool gpu_timestamps_supported = false;
     int warmup_iterations = 0;
     int timed_iterations = 0;
-    std::string measurement_revision = "2026-11-08-remaining-review-fixes";
+    std::string measurement_revision = "2026-11-08-contention-merge";
     std::vector<std::string> command_line;
     std::string shader_binary_directory;
 };

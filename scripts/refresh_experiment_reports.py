@@ -59,7 +59,7 @@ LIMITATIONS = {
     "37": "Every measured frame contributes to the validated output. Remapping changes spatial locality and collisions as well as temporal reuse, so timing does not isolate frame coherence.",
     "38": "This is a visibility append/bin-count proxy; it does not establish downstream culling or rendering savings.",
     "39": "Strategies examine different candidate sets. GB/s is estimated source-level traffic, including strategy-specific auxiliary accesses and modeled atomic operations, rather than observed DRAM bytes; overlap totals are validated outside timing.",
-    "40": "Persistent scheduling includes per-lane task-claim costs; results depend on task distribution and do not cover all queue granularities.",
+    "40": "Persistent scheduling claims one workgroup-sized chunk at a time and includes a workgroup barrier before reusing the shared claim. GB/s estimates source-level storage-buffer traffic with 8 bytes per global atomic read-modify-write; it does not measure physical DRAM traffic. Results depend on task distribution and do not cover all queue granularities.",
     "41": "Both paths compute the same workgroup-wide sum and odd-input count, independently of subgroup mapping. This is not a device-wide reduction, and timing alone does not measure subgroup instruction latency.",
     "42": "This compares serial two-pass and fused single-pass proxies on one queue; it does not measure concurrent queues or asynchronous overlap.",
     "43": "The ray-style workload is a flat checksum proxy without dependent traversal; layout and record footprint vary together.",

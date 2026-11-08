@@ -247,10 +247,12 @@ PreparedCaseData prepare_case_data(CullingMode mode, DistributionKind kind, uint
 uint64_t compute_estimated_global_traffic_bytes(uint32_t entity_count, uint32_t visible_count, CullingMode mode) {
     const uint64_t input_bytes = static_cast<uint64_t>(entity_count) * sizeof(EntityRecord);
     const uint64_t visible_output_bytes = static_cast<uint64_t>(visible_count) * sizeof(uint32_t);
-    uint64_t counter_atomic_bytes = static_cast<uint64_t>(visible_count) * sizeof(uint32_t);
-    if (mode == CullingMode::ClusteredCulling) {
-        counter_atomic_bytes += static_cast<uint64_t>(visible_count) * sizeof(uint32_t);
-    }
+    const uint64_t workgroup_count = (static_cast<uint64_t>(entity_count) + kWorkgroupSize - 1U) / kWorkgroupSize;
+    const uint64_t counter_atomic_ops =
+        workgroup_count * ((mode == CullingMode::ClusteredCulling) ? (1U + kClusterCount) : 1U);
+    // Model each global uint32 atomic as one read plus one write. Shared-memory
+    // atomics, compiler/cache effects, and physical DRAM traffic are excluded.
+    const uint64_t counter_atomic_bytes = counter_atomic_ops * 2U * sizeof(uint32_t);
     return input_bytes + visible_output_bytes + counter_atomic_bytes;
 }
 
@@ -544,9 +546,13 @@ void record_case_notes(std::string& notes, CullingMode mode, DistributionKind di
     append_note(notes, "cluster_count=" + std::to_string(kClusterCount));
     append_note(notes, "expected_visible_count=" + std::to_string(prepared.expected_visible_ids.size()));
     append_note(notes, "local_size_x=" + std::to_string(kWorkgroupSize));
+    append_note(notes, "counter_aggregation=workgroup_local");
     append_note(notes, "logical_payload_bytes=" + std::to_string(logical_payload_bytes));
     append_note(notes, "estimated_global_total_bytes=" + std::to_string(estimated_global_total_bytes));
     append_note(notes, "gbps_mode=estimated_global_bytes");
+    append_note(notes, "gbps_basis=estimated_source_level_storage_buffer_bytes");
+    append_note(notes, "traffic_model=source_storage_buffer_operations_not_physical_dram");
+    append_note(notes, "atomic_rmw_model_bytes=8");
     if (!dispatch_ok) {
         append_note(notes, "dispatch_ms_non_finite");
     }

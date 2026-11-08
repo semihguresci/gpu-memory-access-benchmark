@@ -38,7 +38,7 @@ struct SmokeCase {
 
 // Keep this matrix small but representative so ctest exercises multiple experiment
 // families without turning GPU integration coverage into a full benchmark run.
-constexpr std::array<SmokeCase, 24> kSmokeCases{{
+constexpr std::array<SmokeCase, 26> kSmokeCases{{
     {.experiment_id = "01_dispatch_basics", .size_arg = "4M"},
     {.experiment_id = "03_memory_copy_baseline", .size_arg = "48"},
     {.experiment_id = "06_aos_vs_soa", .size_arg = "32M"},
@@ -57,7 +57,9 @@ constexpr std::array<SmokeCase, 24> kSmokeCases{{
     {.experiment_id = "32_subgroup_stream_compaction_variants", .size_arg = "4M"},
     {.experiment_id = "34_radix_sort_gpu", .size_arg = "128M"},
     {.experiment_id = "37_frame_to_frame_coherence", .size_arg = "4M"},
+    {.experiment_id = "38_frustum_vs_clustered_culling", .size_arg = "4M"},
     {.experiment_id = "39_tiled_light_assignment", .size_arg = "4M"},
+    {.experiment_id = "40_persistent_threads_work_queues", .size_arg = "4M"},
     {.experiment_id = "41_subgroup_operations_study", .size_arg = "32M"},
     {.experiment_id = "42_async_compute_overlap", .size_arg = "32M"},
     {.experiment_id = "44_gpu_driven_pipeline_blocks", .size_arg = "4M"},
@@ -175,6 +177,68 @@ void expect_frame_coherence_export_contract(const nlohmann::json& row, const std
     EXPECT_LE(*resident_payload, *scratch);
     EXPECT_EQ(note_value(notes, "oracle"), "all_eight_frame_outputs_each_iteration");
     EXPECT_EQ(note_value(notes, "frame_outputs"), "disjoint");
+}
+
+void expect_estimated_atomic_traffic_contract(const nlohmann::json& row, const std::string& notes,
+                                              uint64_t expected_bytes) {
+    EXPECT_EQ(integer_note_value(notes, "estimated_global_total_bytes"), expected_bytes);
+    EXPECT_EQ(integer_note_value(notes, "atomic_rmw_model_bytes"), 8U);
+    EXPECT_EQ(note_value(notes, "gbps_basis"), "estimated_source_level_storage_buffer_bytes");
+    EXPECT_EQ(note_value(notes, "traffic_model"), "source_storage_buffer_operations_not_physical_dram");
+    const double gpu_ms = row.at("gpu_ms").get<double>();
+    ASSERT_TRUE(std::isfinite(gpu_ms));
+    ASSERT_GT(gpu_ms, 0.0);
+    EXPECT_NEAR(row.at("gbps").get<double>() * gpu_ms * 1.0e6, static_cast<double>(expected_bytes), 1.0);
+}
+
+void expect_culling_export_contract(const nlohmann::json& row, const std::string& notes) {
+    const auto entities = integer_note_value(notes, "entity_count");
+    const auto visible = integer_note_value(notes, "expected_visible_count");
+    const auto local_size = integer_note_value(notes, "local_size_x");
+    const auto clusters = integer_note_value(notes, "cluster_count");
+    const auto mode = note_value(notes, "culling_mode");
+    ASSERT_TRUE(entities.has_value());
+    ASSERT_TRUE(visible.has_value());
+    ASSERT_TRUE(local_size.has_value());
+    ASSERT_TRUE(clusters.has_value());
+    ASSERT_TRUE(mode.has_value());
+    ASSERT_GT(*local_size, 0U);
+    EXPECT_EQ(*entities, row.at("problem_size").get<uint64_t>());
+    EXPECT_LE(*visible, *entities);
+    EXPECT_EQ(*clusters, 16U);
+    EXPECT_EQ(note_value(notes, "counter_aggregation"), "workgroup_local");
+    EXPECT_TRUE(*mode == "frustum_direct" || *mode == "clustered_culling");
+    const uint64_t workgroups = (*entities + *local_size - 1U) / *local_size;
+    // One visible-list reservation per workgroup, plus all sixteen cluster
+    // counters in clustered mode, including zero-valued updates.
+    const uint64_t atomic_ops = workgroups * (*mode == "clustered_culling" ? (1U + *clusters) : 1U);
+    const uint64_t payload = (*entities * 16U) + (*visible * sizeof(uint32_t));
+    EXPECT_EQ(integer_note_value(notes, "logical_payload_bytes"), payload);
+    expect_estimated_atomic_traffic_contract(row, notes, payload + (atomic_ops * 8U));
+}
+
+void expect_work_queue_export_contract(const nlohmann::json& row, const std::string& notes) {
+    const auto tasks = integer_note_value(notes, "task_count");
+    const auto local_size = integer_note_value(notes, "local_size_x");
+    const auto workers = integer_note_value(notes, "persistent_worker_threads");
+    const auto mode = note_value(notes, "scheduling_mode");
+    ASSERT_TRUE(tasks.has_value());
+    ASSERT_TRUE(local_size.has_value());
+    ASSERT_TRUE(workers.has_value());
+    ASSERT_TRUE(mode.has_value());
+    ASSERT_GT(*local_size, 0U);
+    EXPECT_EQ(*tasks, row.at("problem_size").get<uint64_t>());
+    EXPECT_EQ(*workers % *local_size, 0U);
+    EXPECT_TRUE(*mode == "static_partitioned" || *mode == "persistent_queue");
+    const bool persistent = *mode == "persistent_queue";
+    EXPECT_EQ(integer_note_value(notes, "queue_claim_tasks"), persistent ? *local_size : 0U);
+    // Every task reads one cost and writes one checksum. Persistent workers
+    // additionally claim each task chunk and one terminating chunk per group.
+    const uint64_t payload = *tasks * 2U * sizeof(uint32_t);
+    const uint64_t atomic_ops =
+        persistent ? ((*tasks + *local_size - 1U) / *local_size) + (*workers / *local_size) : 0U;
+    EXPECT_EQ(integer_note_value(notes, "logical_payload_bytes"), payload);
+    expect_estimated_atomic_traffic_contract(row, notes, payload + (atomic_ops * 8U));
 }
 
 void expect_block_reorder_export_contract(const nlohmann::json& row, const std::string& notes) {
@@ -409,6 +473,10 @@ TEST(ExperimentSmokeTests, RunsRepresentativeExperimentMatrix) {
                 expect_compaction_export_contract(row, notes);
             } else if (experiment_id == "37_frame_to_frame_coherence") {
                 expect_frame_coherence_export_contract(row, notes);
+            } else if (experiment_id == "38_frustum_vs_clustered_culling") {
+                expect_culling_export_contract(row, notes);
+            } else if (experiment_id == "40_persistent_threads_work_queues") {
+                expect_work_queue_export_contract(row, notes);
             } else if (experiment_id == "47_block_reorder_factorial") {
                 expect_block_reorder_export_contract(row, notes);
             } else if (experiment_id == "46_dependent_load_latency") {

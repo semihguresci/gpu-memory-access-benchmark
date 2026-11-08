@@ -59,8 +59,10 @@ Useful flags:
 - `--binary <path>` pins the benchmark executable when a stale build path would otherwise be selected.
 
 ## Results Snapshot
-The current reports use measurement revision `2026-11-08-remaining-review-fixes`.
-The latest collection passed **6,105 of 6,105 timed rows across all 48 experiments**.
+The current reports use measurement revision `2026-11-08-remaining-review-fixes`,
+with experiments 38 and 40 refreshed under `2026-11-08-contention-merge` after
+integrating the workgroup contention optimizations from `main`.
+Together, the current exports pass **6,105 of 6,105 timed rows across all 48 experiments**.
 All 48 reports were refreshed, with **192 derived tables and 191 charts** verified
 against their recorded source and tool hashes. Reports identify the exact raw
 export, matching archive, binary, source-tree, and shader-bundle provenance.
@@ -89,7 +91,7 @@ the [review fixes and validation record](./docs/experiment_integrity_fixes.md).
 ## Validation
 As of the 2026-11-08 review, the Release build passes **57 CTest cases** (50 unit
 and seven integration cases) and **74 Python tests**. One integration case runs
-a **24-experiment GPU smoke matrix**; the full 48-experiment collection above is
+a **26-experiment GPU smoke matrix**; the full 48-experiment collection above is
 separate run evidence. The modified production translation units pass the required
 GCC warning checks, and changed code passes the repository clang-tidy checks.
 

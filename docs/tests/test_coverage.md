@@ -5,7 +5,7 @@ This document maps current automated tests to production code and highlights kno
 
 Current automated suite:
 - CTest discovers 57 GoogleTest cases: 50 unit cases and seven integration cases when GPU integration is enabled.
-- The representative GPU matrix is one integration case containing 24 experiment invocations; it is not 24 separate CTest cases.
+- The representative GPU matrix is one integration case containing 26 experiment invocations; it is not 26 separate CTest cases.
 - Python reporting, analysis, workflow, and provenance suites contain 74 tests, run separately from CTest.
 - targets:
   - `gpu_memory_layout_unit_tests` (default)
@@ -87,7 +87,7 @@ python -m unittest discover -s scripts/tests -v
 python scripts/refresh_experiment_reports.py --experiment all --check
 ```
 
-The final command validates and renders reports without writing them. After fresh collection and artifact generation, omit `--check` to replace each selected `results.md`. These checks verify reporting integrity; they do not replace GPU correctness runs or statistical performance analysis. Current raw exports identify the corrected semantics with `measurement_revision=2026-11-08-remaining-review-fixes`; the revision is not a source/binary hash.
+The final command validates and renders reports without writing them. After fresh collection and artifact generation, omit `--check` to replace each selected `results.md`. These checks verify reporting integrity; they do not replace GPU correctness runs or statistical performance analysis. Current raw exports identify the corrected semantics with `measurement_revision=2026-11-08-remaining-review-fixes`, with experiments 38/40 refreshed under `2026-11-08-contention-merge` after integrating the contention optimizations. The revision is not a source/binary hash.
 
 The `scripts/tests` suites cover measurement-revision selection, exact-current source preference, fail-closed row validation, separate fp32 precision errors, requested-table binding before plotting, and source/tool/table/chart tampering. Explicit output lists prevent omitted optional tables and renamed charts from being relabeled as current artifacts. Historical archive analysis remains available within its own revision and is identified separately from the current raw report.
 
@@ -118,13 +118,13 @@ CPU unit coverage includes:
 
 ### Runtime, experiments, and generated-registry integration
 
-The integration target checks benchmark-binary availability, Vulkan context initialization/shutdown, and timestamp availability. Its 24-case matrix invokes the real executable with `--iterations 1 --warmup 0`, exercising CLI parsing, generated-registry lookup, adapters, resource/pipeline setup, dispatch, validation, teardown, and JSON export on successful paths.
+The integration target checks benchmark-binary availability, Vulkan context initialization/shutdown, and timestamp availability. Its 26-case matrix invokes the real executable with `--iterations 1 --warmup 0`, exercising CLI parsing, generated-registry lookup, adapters, resource/pipeline setup, dispatch, validation, teardown, and JSON export on successful paths.
 
-The matrix covers experiment IDs **01, 03, 06, 11, 15, 16, 17, 18, 20, 22, 24, 27, 28, 32, 34, 37, 39, 41, 42, 44, 45, 46, 47, and 48**. It checks process success, nonempty rows/results, matching experiment IDs, metadata counts/configuration, and every exported row's correctness. Export-contract assertions verify source-request byte accounting in 22, six-buffer budgets in 28/47, survivor traffic in 32, disjoint frame outputs in 37, visibility-sensitive traffic in 44, and active versus resident payload in 46. Experiments 03/15 exercise the 48-byte valid boundary; separate tests reject smaller probe budgets and budgets unable to hold experiment 47's eviction buffer.
+The matrix covers experiment IDs **01, 03, 06, 11, 15, 16, 17, 18, 20, 22, 24, 27, 28, 32, 34, 37, 38, 39, 40, 41, 42, 44, 45, 46, 47, and 48**. It checks process success, nonempty rows/results, matching experiment IDs, metadata counts/configuration, and every exported row's correctness. Export-contract assertions verify source-request byte accounting in 22, six-buffer budgets in 28/47, survivor traffic in 32, disjoint frame outputs in 37, workgroup aggregation and atomic request accounting in 38/40, visibility-sensitive traffic in 44, and active versus resident payload in 46. Experiments 03/15 exercise the 48-byte valid boundary; separate tests reject smaller probe budgets and budgets unable to hold experiment 47's eviction buffer.
 
 The fresh-output integration regression runs a correct occupancy variant before a substituted no-op variant, verifies that the no-op measurements fail, and verifies that the remaining correct variant still passes.
 
-The separate all-48 experiment validation/collection workflow provides broader run evidence; it does not expand the automated 24-case regression matrix or establish performance stability. Smoke cases use small configurations and do not enable validation layers themselves.
+The separate all-48 experiment validation/collection workflow provides broader run evidence; it does not expand the automated 26-case regression matrix or establish performance stability. Smoke cases use small configurations and do not enable validation layers themselves.
 
 ## Partial Coverage and Remaining Gaps
 
@@ -142,7 +142,7 @@ Remaining gaps include:
 
 ### Experiment implementations
 
-Dispatch Basics, AoS/SoA, and the other listed experiments and adapters have end-to-end smoke coverage. Experiments outside the 24-case matrix do not yet have automated GPU regression invocations. Existing cases do not exhaust every tail size, variant/device-limit combination, algorithmic distribution, or multi-iteration dependency.
+Dispatch Basics, AoS/SoA, and the other listed experiments and adapters have end-to-end smoke coverage. Experiments outside the 26-case matrix do not yet have automated GPU regression invocations. Existing cases do not exhaust every tail size, variant/device-limit combination, algorithmic distribution, or multi-iteration dependency.
 
 Missing shader files and shader/pipeline creation failures still need dedicated adapter-level failure tests. Compiler register allocation, spills, cache transactions, and physical DRAM traffic require additional tooling beyond correctness tests.
 
@@ -160,4 +160,4 @@ Successful single-experiment orchestration in `src/main.cpp`, CLI experiment res
 1. Add missing-shader and injected Vulkan/IO failure cases that check actionable errors and cleanup.
 2. Add a validation-layer synchronization regression mode and targeted tail/limit/subgroup-mapping cases.
 3. Add manifest-generation fixtures for malformed requirements/duplicate IDs and executable-level failure-propagation checks.
-4. Expand GPU regression coverage beyond the current 24 experiments while retaining bounded test runtime.
+4. Expand GPU regression coverage beyond the current 26 experiments while retaining bounded test runtime.

@@ -915,7 +915,7 @@
         1,
         1
       ],
-      "required_shared_memory_bytes": 0
+      "required_shared_memory_bytes": 72
     },
     {
       "id": "39_tiled_light_assignment",
@@ -963,7 +963,7 @@
         1,
         1
       ],
-      "required_shared_memory_bytes": 0
+      "required_shared_memory_bytes": 4
     },
     {
       "id": "41_subgroup_operations_study",
